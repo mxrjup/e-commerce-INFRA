@@ -1,0 +1,45 @@
+# Deux Services pour un seul broker.
+#
+# « kafka » est l'adresse que les applications utilisent : c'est volontairement
+# le meme nom que dans le Docker Compose local, donc la configuration des
+# services est identique en local et sur le cluster.
+#
+# « kafka-headless » donne au pod son nom DNS stable, kafka-0.kafka-headless,
+# que le broker s'annonce a lui-meme et aux clients.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka
+  ports:
+    - name: client
+      port: 9092
+      targetPort: client
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  labels:
+    app: kafka
+spec:
+  clusterIP: None
+  # Indispensable : le broker doit resoudre kafka-0.kafka-headless des son
+  # demarrage pour joindre son propre quorum de controleur. Sans cette option,
+  # le nom n'existe qu'une fois le pod pret, et le pod ne peut pas devenir pret
+  # sans ce nom.
+  publishNotReadyAddresses: true
+  selector:
+    app: kafka
+  ports:
+    - name: client
+      port: 9092
+      targetPort: client
+    - name: controller
+      port: 9093
+      targetPort: controller

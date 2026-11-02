@@ -1,0 +1,118 @@
+# Kafka en mode KRaft, un seul broker qui cumule les roles broker et
+# controller, avec un volume persistant pour ses segments.
+#
+# Un StatefulSet et non un Deployment : le broker a besoin d'une identite
+# stable (kafka-0) et de retrouver le meme volume apres un redemarrage, sinon
+# il repart sur un cluster vide.
+#
+# Aucun champ « namespace » : les manifests s'appliquent dans le namespace par
+# defaut du kubeconfig fourni par l'ecole.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+spec:
+  serviceName: kafka-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Le volume doit appartenir au groupe du conteneur, sinon le broker ne
+        # peut pas ecrire ses segments.
+        fsGroup: 1000
+      containers:
+        - name: kafka
+          # Meme image que le Docker Compose local.
+          image: apache/kafka:3.8.1
+          ports:
+            - name: client
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            - name: CLUSTER_ID
+              value: "ecommerce-local-kraft-01"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@kafka-0.kafka-headless:9093"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "INTERNAL"
+            - name: KAFKA_LISTENERS
+              value: "INTERNAL://:9092,CONTROLLER://:9093"
+            # Ce que le broker repond aux clients : son nom DNS stable, pas son
+            # adresse IP, qui change a chaque redemarrage.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "INTERNAL://kafka-0.kafka-headless:9092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
+            # Un seul broker : rien ne peut etre replique.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            # Les topics sont crees par le Job, jamais a la demande.
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "false"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+            # La JVM se dimensionne sur la limite du conteneur.
+            - name: KAFKA_HEAP_OPTS
+              value: "-XX:MaxRAMPercentage=70.0"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          # Le namespace de l'ecole est limite a 2 coeurs et 4 Gio reserves :
+          # Kafka en prend une part modeste pour laisser la place aux services.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          readinessProbe:
+            exec:
+              command:
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
+                - --bootstrap-server
+                - localhost:9092
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            # Le namespace autorise 5 volumes pour 20 Gio au total.
+            storage: 2Gi
