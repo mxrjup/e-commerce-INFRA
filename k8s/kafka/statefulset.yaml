@@ -75,18 +75,29 @@ spec:
               value: "false"
             - name: KAFKA_LOG_DIRS
               value: "/var/lib/kafka/data"
+            # Retention bornee pour que le volume ne se remplisse jamais :
+            # 9 partitions (3 topics x 3) x (256 Mio + un segment de 64 Mio)
+            # = environ 2,9 Gio au pire, sous les 5 Gio du volume.
+            - name: KAFKA_LOG_RETENTION_HOURS
+              value: "168"
+            - name: KAFKA_LOG_RETENTION_BYTES
+              value: "268435456"
+            - name: KAFKA_LOG_SEGMENT_BYTES
+              value: "67108864"
             # La JVM se dimensionne sur la limite du conteneur.
             - name: KAFKA_HEAP_OPTS
               value: "-XX:MaxRAMPercentage=70.0"
           volumeMounts:
             - name: data
               mountPath: /var/lib/kafka/data
-          # Le namespace de l'ecole est limite a 2 coeurs et 4 Gio reserves :
-          # Kafka en prend une part modeste pour laisser la place aux services.
+          # Le namespace de l'ecole est limite a 4 coeurs et 8 Gio reserves,
+          # partages avec tous les services : Kafka en prend une part modeste.
+          # La memoire reservee egale la limite, pour que le broker ne soit
+          # pas le premier evince si le noeud manque de memoire.
           resources:
             requests:
               cpu: 250m
-              memory: 768Mi
+              memory: 1536Mi
             limits:
               cpu: "1"
               memory: 1536Mi
@@ -114,5 +125,6 @@ spec:
           - ReadWriteOnce
         resources:
           requests:
-            # Le namespace autorise 5 volumes pour 20 Gio au total.
-            storage: 2Gi
+            # Le namespace autorise 10 volumes pour 50 Gio au total, sur la
+            # classe par defaut (longhorn).
+            storage: 5Gi
