@@ -31,10 +31,18 @@ spec:
         # Le volume doit appartenir au groupe du conteneur, sinon le broker ne
         # peut pas ecrire ses segments.
         fsGroup: 1000
+        # Exige par le niveau « restricted » des Pod Security Standards, que
+        # le namespace de l'ecole audite.
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: kafka
           # Meme image que le Docker Compose local.
           image: apache/kafka:3.8.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: client
               containerPort: 9092
