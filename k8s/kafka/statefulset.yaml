@@ -81,8 +81,10 @@ spec:
             # Les topics sont crees par le Job, jamais a la demande.
             - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
               value: "false"
+            # Un sous-dossier, pas la racine du volume : un volume ext4 contient
+            # « lost+found », que Kafka refuse dans son repertoire de logs.
             - name: KAFKA_LOG_DIRS
-              value: "/var/lib/kafka/data"
+              value: "/var/lib/kafka/data/logs"
             # Retention bornee pour que le volume ne se remplisse jamais :
             # 9 partitions (3 topics x 3) x (256 Mio + un segment de 64 Mio)
             # = environ 2,9 Gio au pire, sous les 5 Gio du volume.
