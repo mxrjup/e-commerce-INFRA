@@ -16,9 +16,15 @@ kubectl get pods
 Le kubeconfig fixe déjà le namespace par défaut : les manifests ne portent donc
 pas de champ `namespace`, et s'appliquent là où pointe votre contexte.
 
-Le namespace est contraint : **2 cœurs et 4 Gio réservés** (jusqu'à 4 cœurs et
-8 Gio en pointe), **20 pods**, **5 volumes pour 20 Gio**. Chaque manifest doit
-déclarer des `requests` modestes, sinon un déploiement bloque faute de quota.
+Le namespace est contraint : **4 cœurs et 8 Gio réservés** (8 cœurs et 16 Gio
+en limites), **40 pods**, **20 services** (ni NodePort ni LoadBalancer),
+**10 volumes pour 50 Gio** (dont au plus 3 volumes et 10 Gio sur la classe
+`local-path` ; la classe par défaut est `longhorn`). Ce budget est partagé par
+tous les services : chaque manifest doit déclarer des `requests` modestes,
+sinon un déploiement bloque faute de quota.
+
+Les pods doivent respecter le niveau `baseline` des Pod Security Standards
+(refus sinon) ; le niveau `restricted` est audité et donne un avertissement.
 
 ## Kafka
 
@@ -37,7 +43,7 @@ kubectl logs job/kafka-create-topics
 |---|---|
 | `Service/kafka` | adresse des applications, `kafka:9092` |
 | `Service/kafka-headless` | nom DNS stable du pod, `kafka-0.kafka-headless` |
-| `StatefulSet/kafka` | le broker, 250m et 768 Mio réservés, PVC de 2 Gio |
+| `StatefulSet/kafka` | le broker, 250m et 1,5 Gio réservés, PVC de 5 Gio |
 | `ConfigMap/kafka-topics` | le script de création des topics |
 | `Job/kafka-create-topics` | joue ce script une fois le broker prêt |
 
