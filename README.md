@@ -61,6 +61,11 @@ sous son adresse IP, qui change à chaque redémarrage.
 stack locale. Les deux doivent rester synchronisées ; le tableau des topics et
 de leurs producteurs est dans le README du dépôt back-end.
 
+Chaque topic a son **topic de rebut**, même nom suivi de `.dlt`
+(`order.paid.dlt`, ...) : un service y publie un message dont le traitement a
+échoué après ses tentatives. Le script les crée avec les autres, six topics en
+tout. Sans eux, un message en échec serait rejoué indéfiniment.
+
 **Rejouer le Job** demande de le supprimer d'abord, un Job étant immuable :
 
 ```bash
