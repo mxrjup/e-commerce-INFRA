@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: ecommerce
+    folder: e-commerce
+    type: file
+    # Relu toutes les 10 s : modifier le JSON suffit, pas besoin de redemarrer.
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
