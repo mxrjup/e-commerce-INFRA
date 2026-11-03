@@ -1,0 +1,61 @@
+# kafka-exporter (K03) : expose a Prometheus l'etat des topics (offsets, donc
+# debit et volume) et des consumer groups (retard), sur :9308/metrics. Le
+# dashboard Grafana de monitoring/grafana/dashboards/kafka.json s'en sert.
+#
+# Il interroge le broker comme un client : rien a configurer cote Kafka.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  labels:
+    app: kafka-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # « nobody » dans l'image, declare par son nom.
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kafka-exporter
+          image: danielqsj/kafka-exporter:v1.9.0
+          args:
+            - --kafka.server=kafka:9092
+            - --kafka.version=3.8.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: metrics
+              containerPort: 9308
+          # ~4 Mio mesures.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
