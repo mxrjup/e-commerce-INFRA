@@ -13,3 +13,17 @@ resources:
   - postgres/init-configmap.yaml
   - postgres/service.yaml
   - postgres/statefulset.yaml
+  - keycloak/service.yaml
+  - keycloak/deployment.yaml
+
+configMapGenerator:
+  # PUBLIC_HOST et PUBLIC_URL, lus par les pods.
+  - name: platform-config
+    envs:
+      - params.env
+  # Le realm deploye, et lui seul. Le suffixe de hash ajoute par kustomize
+  # redemarre Keycloak quand le fichier change ; un realm deja importe n'est
+  # pourtant PAS mis a jour, voir le README.
+  - name: keycloak-realm
+    files:
+      - keycloak/ecommerce-realm.json
