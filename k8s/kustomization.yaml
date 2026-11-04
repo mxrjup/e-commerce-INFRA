@@ -19,6 +19,7 @@ resources:
   - services/cart-service.yaml
   - services/order-service.yaml
   - services/network-policies.yaml
+  - ingress/ingress.yaml
 
 configMapGenerator:
   # PUBLIC_HOST et PUBLIC_URL, lus par les pods.
@@ -42,3 +43,17 @@ images:
     newTag: dev
   - name: ghcr.io/mxrjup/e-commerce-back/order-service
     newTag: dev
+
+# L'hote de params.env reporte dans l'Ingress.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: platform-config
+      fieldPath: data.PUBLIC_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: ecommerce
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0
