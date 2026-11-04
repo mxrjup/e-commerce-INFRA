@@ -15,6 +15,10 @@ resources:
   - postgres/statefulset.yaml
   - keycloak/service.yaml
   - keycloak/deployment.yaml
+  - services/api-gateway.yaml
+  - services/cart-service.yaml
+  - services/order-service.yaml
+  - services/network-policies.yaml
 
 configMapGenerator:
   # PUBLIC_HOST et PUBLIC_URL, lus par les pods.
@@ -27,3 +31,14 @@ configMapGenerator:
   - name: keycloak-realm
     files:
       - keycloak/ecommerce-realm.json
+
+# Le tag des images du back-end, a un seul endroit. Publiees par la CI du
+# back-end (D03, #54) ; le deploiement par tag (D05, #38) mettra ici la
+# version livree.
+images:
+  - name: ghcr.io/mxrjup/e-commerce-back/api-gateway
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/cart-service
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/order-service
+    newTag: dev

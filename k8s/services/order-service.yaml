@@ -1,0 +1,132 @@
+# Les commandes et le paiement Stripe. Joignable seulement depuis la gateway et
+# les autres services (voir network-policies.yaml).
+#
+# Pas d'actuator dans ce service pour l'instant : les sondes verifient que le
+# port repond.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: order-service
+        tier: backend
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: order-service
+          image: ghcr.io/mxrjup/e-commerce-back/order-service
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8084
+          env:
+            - name: PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: PUBLIC_URL
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: ecommerce_order
+            - name: SPRING_DATASOURCE_USERNAME
+              value: order_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: ORDER_DB_PASSWORD
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            # Le service catalogue n'existe pas encore (C01, #3) : adresse
+            # reservee, port du tableau des modules du back-end.
+            - name: CATALOG_SERVICE_URL
+              value: http://catalog-service:8081
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stripe
+                  key: STRIPE_SECRET_KEY
+            # Lu par le webhook Stripe (O03, PR #105 du back-end).
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stripe
+                  key: STRIPE_WEBHOOK_SECRET
+            # Pages de retour apres paiement, a confirmer avec le parcours
+            # mobile (O11, #35). {CHECKOUT_SESSION_ID} est remplace par Stripe.
+            - name: STRIPE_SUCCESS_URL
+              value: "$(PUBLIC_URL)/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+            - name: STRIPE_CANCEL_URL
+              value: "$(PUBLIC_URL)/checkout/cancel"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+spec:
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: 8084
+      targetPort: http
