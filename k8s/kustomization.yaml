@@ -1,0 +1,15 @@
+# La plateforme applicative : PostgreSQL, Keycloak, les services et l'Ingress.
+#
+#   kubectl kustomize k8s/       # voir ce qui sera applique
+#   kubectl apply -k k8s/        # appliquer
+#
+# Kafka n'est pas inclus : il s'applique a part et AVANT, voir la section
+# « Kafka » du README. Les Secrets non plus : ils se creent a la main, voir
+# k8s/secrets.example/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - postgres/init-configmap.yaml
+  - postgres/service.yaml
+  - postgres/statefulset.yaml
