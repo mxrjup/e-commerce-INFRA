@@ -4,8 +4,11 @@
 # e-commerce-BACK/docker/kafka/create-topics.sh, qui sert de reference pour la
 # stack locale. Toute modification doit etre reportee dans les deux depots.
 #
-# Le script est idempotent : relancer le Job ne touche a rien. Un Job etant
-# immuable une fois cree, le rejouer demande de le supprimer d'abord :
+# Le script est idempotent : relancer le Job ne touche a rien. Un Job ne se
+# rejoue pas : modifier le ConfigMap puis faire `kubectl apply` met le script a
+# jour SANS le relancer. Le Job s'efface donc une heure apres sa fin
+# (ttlSecondsAfterFinished), et le prochain `kubectl apply` le recree. Dans
+# l'heure, ou pour un Job cree avant ce reglage, le supprimer d'abord :
 #
 #   kubectl delete job kafka-create-topics --ignore-not-found
 #   kubectl apply -f k8s/kafka/topics-job.yaml
@@ -63,6 +66,9 @@ metadata:
     app: kafka
 spec:
   backoffLimit: 6
+  # Une heure pour lire ses logs, puis le Job disparait : le prochain apply
+  # le recree et rejoue le script.
+  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       # Pas « app: kafka » : ce pod serait sinon selectionne par les Services
