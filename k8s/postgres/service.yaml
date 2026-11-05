@@ -1,0 +1,16 @@
+# « postgres:5432 », le meme nom que dans le Docker Compose local : la
+# configuration des services est identique en local et sur le cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
