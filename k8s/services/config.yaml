@@ -1,0 +1,29 @@
+# Configuration commune de la plateforme, sans secret. Les identifiants sont
+# dans des Secrets crees a la main (voir le README).
+#
+# LES DEUX NOMS D'HOTE ci-dessous doivent correspondre a ceux de
+# k8s/ingress.yaml : remplacer « ecommerce.local » par le domaine du cluster,
+# aux deux endroits.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecommerce-config
+data:
+  # --- Keycloak ---
+  # URL publique de Keycloak : elle devient le « iss » des jetons. Navigateurs,
+  # app mobile et gateway doivent voir la meme.
+  KEYCLOAK_FRONTEND_URL: "http://auth.ecommerce.local"
+  KEYCLOAK_ISSUER_URI: "http://auth.ecommerce.local/realms/ecommerce"
+  # Les cles de signature, elles, se recuperent a l'interieur du cluster.
+  KEYCLOAK_JWK_SET_URI: "http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs"
+
+  # --- Gateway ---
+  CART_SERVICE_URI: "http://cart-service:8083"
+  ORDER_SERVICE_URI: "http://order-service:8084"
+  # Origines autorisees par la gateway : back-office et app, a ajuster.
+  CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:8081"
+
+  # --- Dependances, memes noms que dans le Docker Compose ---
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"

@@ -1,0 +1,145 @@
+# Keycloak en mode production (« start », pas « start-dev »), base dans le
+# Postgres de la plateforme, realm « ecommerce » importe au demarrage.
+#
+# Le realm vient du ConfigMap « keycloak-realm », cree depuis le fichier du
+# depot back-end plutot que copie ici (voir le README) :
+# e-commerce-BACK/docker/keycloak/import/ecommerce-realm.json. Comme en local,
+# l'import n'a lieu que si le realm n'existe pas encore en base.
+#
+# HTTP en clair derriere l'Ingress, qui porte le TLS quand le cluster en
+# fournit. La console d'administration n'est PAS exposee par l'Ingress : elle
+# se consulte par port-forward (KC_HOSTNAME_ADMIN).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  # Un seul Keycloak a la fois : deux instances sans cache distribue se
+  # marcheraient dessus pendant un deploiement.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # Utilisateur de l'image ; son groupe est 0, proprietaire de /opt/keycloak.
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          args: ["start", "--import-realm"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://postgres:5432/keycloak
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: username
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            # URL publique : le « iss » des jetons et les liens des pages de
+            # connexion. Lue aussi par le realm importe (${env.*}).
+            - name: KC_HOSTNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ecommerce-config
+                  key: KEYCLOAK_FRONTEND_URL
+            - name: KEYCLOAK_FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ecommerce-config
+                  key: KEYCLOAK_FRONTEND_URL
+            # La console d'administration, par port-forward uniquement :
+            #   kubectl port-forward svc/keycloak 8180:8080
+            - name: KC_HOSTNAME_ADMIN
+              value: http://localhost:8180
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            # Derriere l'Ingress : schema et hote d'origine lus dans X-Forwarded-*.
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            # Fournisseurs d'identite, optionnels : sans ce Secret, Google et
+            # Apple restent importes desactives, comme en local.
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef: {name: keycloak-idp, key: google-client-id, optional: true}
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: keycloak-idp, key: google-client-secret, optional: true}
+            - name: APPLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef: {name: keycloak-idp, key: apple-client-id, optional: true}
+            - name: APPLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: keycloak-idp, key: apple-client-secret, optional: true}
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # Le premier demarrage construit la configuration et importe le
+          # realm : jusqu'a deux minutes et demie avant la premiere reponse.
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 20
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
