@@ -1,0 +1,100 @@
+# Panier (P*), consommateur de order.paid.
+#
+# Image publiee par la CI du back-end (D03 #54). Le tag « dev » suit la branche
+# dev, d'ou imagePullPolicy: Always ; un deploiement de production epinglera
+# un tag de version ou sha-<commit> (D05 #38).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-service
+  labels:
+    app: cart-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart-service
+  template:
+    metadata:
+      labels:
+        app: cart-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # Utilisateur « spring » du Dockerfile du back-end, declare par son nom
+        # dans l'image : Kubernetes exige l'UID pour verifier runAsNonRoot.
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cart-service
+          image: ghcr.io/mxrjup/e-commerce-back/cart-service:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: ecommerce-config
+          env:
+            - name: SERVER_PORT
+              value: "8083"
+            - name: DB_NAME
+              value: ecommerce_cart
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+          # Mesure sur k3s : 160 a 230 Mio au repos, demarrage en ~30 s avec
+          # 500m (18 s avec un coeur). La limite CPU reste a 500m pour que les
+          # neuf services tiennent dans les 8 coeurs du quota (voir le README).
+          # Le tas suit la limite memoire (-XX:MaxRAMPercentage=75 dans l'image).
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          # Pas encore d'Actuator dans ce service (il arrive avec D06 #17) : le
+          # port ouvert signale que Spring a fini de demarrer. A remplacer par
+          # /actuator/health/readiness et /liveness quand il sera la.
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart-service
+  labels:
+    app: cart-service
+spec:
+  type: ClusterIP
+  selector:
+    app: cart-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http

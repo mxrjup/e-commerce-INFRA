@@ -1,0 +1,88 @@
+# Point d'entree de l'API : routage, validation des jetons, CORS (T04).
+#
+# Image publiee par la CI du back-end (D03 #54). Le tag « dev » suit la branche
+# dev, d'ou imagePullPolicy: Always ; un deploiement de production epinglera
+# un tag de version ou sha-<commit> (D05 #38).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # Utilisateur « spring » du Dockerfile du back-end, declare par son nom
+        # dans l'image : Kubernetes exige l'UID pour verifier runAsNonRoot.
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api-gateway
+          image: ghcr.io/mxrjup/e-commerce-back/api-gateway:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: ecommerce-config
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+          # Mesure sur k3s : 160 a 230 Mio au repos, demarrage en ~30 s avec
+          # 500m (18 s avec un coeur). La limite CPU reste a 500m pour que les
+          # neuf services tiennent dans les 8 coeurs du quota (voir le README).
+          # Le tas suit la limite memoire (-XX:MaxRAMPercentage=75 dans l'image).
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
