@@ -111,9 +111,10 @@ curl http://auth.<domaine>/realms/ecommerce/.well-known/openid-configuration  # 
 
 Les services tirent `ghcr.io/mxrjup/e-commerce-back/<service>:dev`, publié par
 la CI du back-end (`D03` mxrjup/e-commerce-BACK#54) à chaque merge sur `dev`,
-avec `imagePullPolicy: Always`. **Un paquet GHCR est privé à sa création** :
-soit le rendre public (*Package settings* → *Change visibility*), soit donner
-au namespace un jeton en lecture :
+avec `imagePullPolicy: Always`. **Les paquets sont publics** : ils héritent de
+la visibilité du dépôt `e-commerce-BACK`, et se tirent sans identifiants
+(vérifié après le premier push). Si le dépôt devenait privé, donner au
+namespace un jeton en lecture :
 
 ```bash
 kubectl create secret docker-registry ghcr-pull --docker-server=ghcr.io \
