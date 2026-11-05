@@ -1,0 +1,48 @@
+# Les deux seules entrees publiques de la plateforme :
+#
+#   api.ecommerce.local   -> la gateway, qui seule decide de ce qui est public
+#   auth.ecommerce.local  -> Keycloak, pages de connexion et jetons
+#
+# Remplacer « ecommerce.local » par le domaine du cluster, ici ET dans
+# k8s/services/config.yaml. Pas d'ingressClassName : la classe par defaut du
+# cluster s'applique.
+#
+# Cote Keycloak, seuls /realms (connexion, jetons, decouverte OIDC) et
+# /resources (feuilles de style et scripts des pages) passent. La console
+# d'administration (/admin) n'est pas exposee : port-forward uniquement.
+#
+# TLS : a ajouter quand le cluster fournit un certificat (section « tls: »,
+# puis passer les URL de config.yaml en https).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce
+spec:
+  rules:
+    - host: api.ecommerce.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
+    - host: auth.ecommerce.local
+      http:
+        paths:
+          - path: /realms
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  name: http
+          - path: /resources
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  name: http
