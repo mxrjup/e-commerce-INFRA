@@ -38,6 +38,9 @@ spec:
       containers:
         - name: order-service
           image: ghcr.io/mxrjup/e-commerce-back/order-service
+          # Tag mobile (dev) : sans Always, un redemarrage reprendrait l'image
+          # deja presente sur le noeud. A revoir avec un tag immuable (D05).
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -43,6 +43,9 @@ spec:
       containers:
         - name: api-gateway
           image: ghcr.io/mxrjup/e-commerce-back/api-gateway
+          # Tag mobile (dev) : sans Always, un redemarrage reprendrait l'image
+          # deja presente sur le noeud. A revoir avec un tag immuable (D05).
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
