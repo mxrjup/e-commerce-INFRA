@@ -138,6 +138,12 @@ des deux, Traefik présente son certificat auto-signé. **Sans TLS du tout**, le
 realm refuse les connexions venant de l'extérieur (`sslRequired: external`) :
 c'est voulu, ne pas l'assouplir.
 
+> **Le certificat auto-signé ne sert qu'à vérifier le déploiement.** Les
+> vérifications ci-dessous passent avec `curl -k`, mais Stripe ne livre pas
+> ses webhooks à un certificat non reconnu et l'application mobile refuse la
+> connexion : le premier paiement échouerait. Pour un usage réel, un
+> certificat signé par une autorité reconnue (fourni, ou via cert-manager).
+
 **4. L'accès aux images.** Si les paquets GHCR du back-end sont privés, un
 jeton GitHub avec le seul droit `read:packages` :
 
