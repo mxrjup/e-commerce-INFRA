@@ -1,0 +1,52 @@
+# Qui peut parler a qui. Seuls les pods selectionnes ici sont filtres : la
+# gateway et Keycloak, qui recoivent le trafic de l'Ingress, ne le sont pas, ni
+# Kafka.
+#
+# Les services font confiance a X-Auth-Subject, que seule la gateway pose apres
+# avoir valide le jeton. Un pod du namespace qui les appellerait en direct
+# pourrait le forger : ils n'acceptent donc que la gateway et les autres
+# services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-from-gateway
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+        # Appels internes entre services (C10, O09...).
+        - podSelector:
+            matchLabels:
+              tier: backend
+---
+# La base n'est joignable que par ses clients. L'administration passe par
+# « kubectl exec » ou « kubectl port-forward », qui ne traversent pas ce
+# filtre.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-from-clients
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        # Protocole explicite : sans lui, kubectl apply voit une difference a
+        # chaque passage.
+        - protocol: TCP
+          port: 5432
