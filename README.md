@@ -61,7 +61,16 @@ sous son adresse IP, qui change à chaque redémarrage.
 stack locale. Les deux doivent rester synchronisées ; le tableau des topics et
 de leurs producteurs est dans le README du dépôt back-end.
 
-**Rejouer le Job** demande de le supprimer d'abord, un Job étant immuable :
+Chaque topic a son **topic de rebut**, même nom suivi de `.dlt`
+(`order.paid.dlt`, ...) : un service y publie un message dont le traitement a
+échoué après ses tentatives. Le script les crée avec les autres, six topics en
+tout. Sans eux, un message en échec serait rejoué indéfiniment.
+
+**Rejouer le Job.** Modifier le `ConfigMap` puis faire `kubectl apply` met le
+script à jour **sans relancer le Job** : un Job déjà terminé ne se rejoue pas.
+Le Job s'efface donc **une heure après sa fin** (`ttlSecondsAfterFinished`), et
+le `kubectl apply` suivant le recrée et rejoue le script. Dans l'heure, ou pour
+un Job créé avant ce réglage, le supprimer d'abord :
 
 ```bash
 kubectl delete job kafka-create-topics --ignore-not-found
@@ -69,6 +78,18 @@ kubectl apply -f k8s/kafka/topics-job.yaml
 ```
 
 Le script est idempotent, le rejouer ne touche à rien.
+
+> **Avant de déployer e-commerce-BACK#109** (configuration Kafka commune), les
+> DLT doivent exister sur le cluster : sans eux, un message en échec bloque sa
+> partition. Le Job actuel date d'avant ce réglage : le supprimer puis
+> réappliquer, comme ci-dessus, et vérifier `kubectl logs job/kafka-create-topics`
+> (six topics).
+
+**Disque.** La rétention est bornée par partition : 128 Mio, plus un segment
+actif de 64 Mio. Avec 18 partitions (3 topics, 3 DLT, 3 partitions chacun),
+le pire cas est d'environ 3,4 Gio sur le volume de 5 Gio. **Tout nouveau topic
+ajoute 6 partitions** (lui et son DLT) : refaire ce calcul dans
+`statefulset.yaml`.
 
 ## Plateforme applicative
 
