@@ -1,0 +1,34 @@
+# Script joue par l'image postgres au PREMIER demarrage, sur un volume vide :
+# un role et une base par service, chaque role proprietaire de sa seule base.
+#
+# Equivalent deploye de e-commerce-BACK/docker/postgres/init/01-databases.sql,
+# qui, en local, cree les bases sans roles dedies. Un nouveau service ajoute sa
+# ligne ici, et la cree a la main sur une base deja initialisee : voir le
+# README.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels:
+    app: postgres
+data:
+  01-databases.sh: |
+    #!/bin/sh
+    set -eu
+
+    # role, base, mot de passe. Les valeurs passent par des variables psql
+    # (:"ident" et :'litteral'), jamais par concatenation dans le SQL.
+    create_database() {
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
+            -v role="$1" -v db="$2" -v password="$3" <<'SQL'
+    CREATE ROLE :"role" LOGIN PASSWORD :'password';
+    CREATE DATABASE :"db" OWNER :"role";
+    -- Seul son proprietaire s'y connecte : un service ne lit pas la base d'un
+    -- autre.
+    REVOKE ALL ON DATABASE :"db" FROM PUBLIC;
+    SQL
+    }
+
+    create_database keycloak      keycloak        "$KEYCLOAK_DB_PASSWORD"
+    create_database cart_service  ecommerce_cart  "$CART_DB_PASSWORD"
+    create_database order_service ecommerce_order "$ORDER_DB_PASSWORD"
