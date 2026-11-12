@@ -1,0 +1,16 @@
+# Keycloak dans le cluster : http://keycloak:8080/auth. La gateway y recupere
+# les cles de signature des jetons ; l'Ingress n'expose que les pages de
+# connexion. Le port de management (9000, sondes) n'est pas publie.
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

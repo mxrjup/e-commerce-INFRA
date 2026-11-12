@@ -1,0 +1,59 @@
+# La plateforme applicative : PostgreSQL, Keycloak, les services et l'Ingress.
+#
+#   kubectl kustomize k8s/       # voir ce qui sera applique
+#   kubectl apply -k k8s/        # appliquer
+#
+# Kafka n'est pas inclus : il s'applique a part et AVANT, voir la section
+# « Kafka » du README. Les Secrets non plus : ils se creent a la main, voir
+# k8s/secrets.example/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - postgres/init-configmap.yaml
+  - postgres/service.yaml
+  - postgres/statefulset.yaml
+  - keycloak/service.yaml
+  - keycloak/deployment.yaml
+  - services/api-gateway.yaml
+  - services/cart-service.yaml
+  - services/order-service.yaml
+  - services/network-policies.yaml
+  - ingress/ingress.yaml
+
+configMapGenerator:
+  # PUBLIC_HOST et PUBLIC_URL, lus par les pods.
+  - name: platform-config
+    envs:
+      - params.env
+  # Le realm deploye, et lui seul. Le suffixe de hash ajoute par kustomize
+  # redemarre Keycloak quand le fichier change ; un realm deja importe n'est
+  # pourtant PAS mis a jour, voir le README.
+  - name: keycloak-realm
+    files:
+      - keycloak/ecommerce-realm.json
+
+# Le tag des images du back-end, a un seul endroit. Publiees par la CI du
+# back-end (D03, #54) ; le deploiement par tag (D05, #38) mettra ici la
+# version livree.
+images:
+  - name: ghcr.io/mxrjup/e-commerce-back/api-gateway
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/cart-service
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/order-service
+    newTag: dev
+
+# L'hote de params.env reporte dans l'Ingress.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: platform-config
+      fieldPath: data.PUBLIC_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: ecommerce
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0

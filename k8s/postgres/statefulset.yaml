@@ -1,0 +1,119 @@
+# PostgreSQL, une instance pour toute la plateforme : une base et un role par
+# service, crees au premier demarrage par le script du ConfigMap
+# « postgres-init ».
+#
+# Un StatefulSet pour retrouver le meme volume apres un redemarrage. Meme
+# image que le Docker Compose local du back-end.
+#
+# Les mots de passe viennent du Secret « postgres-credentials », cree a la
+# main sur le cluster et jamais versionne : voir le README.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        # L'utilisateur « postgres » de l'image alpine (uid et gid 70).
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            # Lus par le script d'initialisation, un par role applicatif.
+            - name: KEYCLOAK_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: KEYCLOAK_DB_PASSWORD
+            - name: CART_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: CART_DB_PASSWORD
+            - name: ORDER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: ORDER_DB_PASSWORD
+            # Un sous-dossier, pas la racine du volume : un volume ext4
+            # contient « lost+found », et initdb refuse un dossier non vide.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          resources:
+            # Memoire reservee egale a la limite, comme Kafka : une base ne
+            # doit pas etre la premiere evincee.
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+            # Executable : un script .sh non executable serait « source » par
+            # l'entrypoint de l'image, et ses options shell s'y appliqueraient.
+            defaultMode: 0555
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            # Classe par defaut du cluster (longhorn).
+            storage: 5Gi
