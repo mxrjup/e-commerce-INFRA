@@ -1,0 +1,110 @@
+# Le panier. Joignable seulement depuis la gateway et les autres services
+# (voir network-policies.yaml) : il fait confiance a X-Auth-Subject, que seule
+# la gateway pose.
+#
+# Pas d'actuator dans ce service pour l'instant : les sondes verifient que le
+# port repond.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-service
+  labels:
+    app: cart-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: cart-service
+        tier: backend
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cart-service
+          image: ghcr.io/mxrjup/e-commerce-back/cart-service
+          # Tag mobile (dev) : sans Always, un redemarrage reprendrait l'image
+          # deja presente sur le noeud. A revoir avec un tag immuable (D05).
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8083
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: ecommerce_cart
+            - name: SPRING_DATASOURCE_USERNAME
+              value: cart_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: CART_DB_PASSWORD
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart-service
+  labels:
+    app: cart-service
+spec:
+  selector:
+    app: cart-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http

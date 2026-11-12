@@ -1,0 +1,52 @@
+# Un seul hote public pour toute la plateforme :
+#
+#   /api/**                     -> la gateway
+#   /auth/realms/ecommerce/**   -> Keycloak : connexion, jetons, cles, compte
+#   /auth/resources/**          -> Keycloak : styles et scripts des pages
+#
+# Ni la console d'administration (/auth/admin) ni le realm « master », celui
+# des administrateurs, ne sont publies : on y accede par « kubectl
+# port-forward », donc avec les droits du kubeconfig. Publier /auth/realms en
+# entier exposerait la connexion admin a tout internet.
+#
+# Le back-office web (T06, #11) prendra « / » quand il existera.
+#
+# L'hote est un parametre : k8s/params.env, reporte ici par kustomize. Pas de
+# ingressClassName : la classe par defaut du cluster s'applique (Traefik sur
+# k3s).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce
+spec:
+  # Le certificat du Secret « ecommerce-tls », voir le README. Absent,
+  # Traefik presente son certificat par defaut, auto-signe.
+  tls:
+    - hosts:
+        - PUBLIC_HOST
+      secretName: ecommerce-tls
+  rules:
+    - host: PUBLIC_HOST
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
+          - path: /auth/realms/ecommerce
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  name: http
+          - path: /auth/resources
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  name: http

@@ -1,0 +1,187 @@
+{
+  "realm": "ecommerce",
+  "displayName": "e-commerce",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "verifyEmail": true,
+  "editUsernameAllowed": false,
+  "passwordPolicy": "length(8) and notEmail and notUsername",
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "attributes": {
+    "frontendUrl": "${KEYCLOAK_FRONTEND_URL}"
+  },
+  "smtpServer": {
+    "host": "${SMTP_HOST}",
+    "port": "${SMTP_PORT:587}",
+    "from": "${SMTP_FROM}",
+    "fromDisplayName": "e-commerce",
+    "auth": "true",
+    "user": "${SMTP_USER}",
+    "password": "${SMTP_PASSWORD}",
+    "starttls": "${SMTP_STARTTLS:true}",
+    "ssl": "${SMTP_SSL:false}"
+  },
+  "defaultRole": {
+    "name": "default-roles-ecommerce",
+    "composite": true,
+    "clientRole": false,
+    "containerId": "ecommerce"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "client",
+        "description": "Client de la boutique. Attribue automatiquement a tout compte cree."
+      },
+      {
+        "name": "collaborator",
+        "description": "Acces au back-office : catalogue, commandes, stocks, SAV."
+      },
+      {
+        "name": "admin",
+        "description": "Administration complete : parametres boutique, collaborateurs, MCP.",
+        "composite": true,
+        "composites": {
+          "realm": ["collaborator"]
+        }
+      },
+      {
+        "name": "offline_access",
+        "description": "Role integre Keycloak : permet de demander un jeton hors ligne."
+      },
+      {
+        "name": "uma_authorization",
+        "description": "Role integre Keycloak : acces aux services d'autorisation."
+      },
+      {
+        "name": "default-roles-ecommerce",
+        "description": "Roles attribues a la creation d'un compte. Les roles integres doivent etre declares ci-dessus pour etre composables ici.",
+        "composite": true,
+        "composites": {
+          "realm": ["offline_access", "uma_authorization", "client"],
+          "client": {
+            "account": ["view-profile", "manage-account"]
+          }
+        }
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "web-bo",
+      "name": "Back-office web",
+      "description": "SPA back-office (Vite + keycloak-js). Client public, Authorization Code + PKCE.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "${PUBLIC_URL}",
+      "redirectUris": ["${PUBLIC_URL}/*"],
+      "webOrigins": ["${PUBLIC_URL}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${PUBLIC_URL}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-ecommerce-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "ecommerce-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mobile-app",
+      "name": "Application mobile",
+      "description": "App React Native / Expo. Client public, Authorization Code + PKCE, redirections natives.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "ecommerce://auth-callback"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "ecommerce://auth-callback"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-ecommerce-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "ecommerce-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "displayName": "Google",
+      "providerId": "google",
+      "enabled": false,
+      "trustEmail": true,
+      "storeToken": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${GOOGLE_CLIENT_ID:set-me}",
+        "clientSecret": "${GOOGLE_CLIENT_SECRET:set-me}",
+        "defaultScope": "openid profile email",
+        "syncMode": "IMPORT",
+        "useJwksUrl": "true"
+      }
+    },
+    {
+      "alias": "apple",
+      "displayName": "Apple",
+      "providerId": "oidc",
+      "enabled": false,
+      "trustEmail": true,
+      "storeToken": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${APPLE_CLIENT_ID:set-me}",
+        "clientSecret": "${APPLE_CLIENT_SECRET:set-me}",
+        "issuer": "https://appleid.apple.com",
+        "authorizationUrl": "https://appleid.apple.com/auth/authorize",
+        "tokenUrl": "https://appleid.apple.com/auth/token",
+        "jwksUrl": "https://appleid.apple.com/auth/keys",
+        "useJwksUrl": "true",
+        "validateSignature": "true",
+        "clientAuthMethod": "client_secret_post",
+        "defaultScope": "openid name email",
+        "syncMode": "IMPORT",
+        "uiLocales": "false"
+      }
+    }
+  ]
+}
