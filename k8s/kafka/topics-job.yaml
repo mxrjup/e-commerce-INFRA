@@ -1,0 +1,119 @@
+# Creation des topics du projet.
+#
+# La liste doit rester identique a celle de
+# e-commerce-BACK/docker/kafka/create-topics.sh, qui sert de reference pour la
+# stack locale. Toute modification doit etre reportee dans les deux depots.
+#
+# Le script est idempotent : relancer le Job ne touche a rien. Un Job ne se
+# rejoue pas : modifier le ConfigMap puis faire `kubectl apply` met le script a
+# jour SANS le relancer. Le Job s'efface donc une heure apres sa fin
+# (ttlSecondsAfterFinished), et le prochain `kubectl apply` le recree. Dans
+# l'heure, ou pour un Job cree avant ce reglage, le supprimer d'abord :
+#
+#   kubectl delete job kafka-create-topics --ignore-not-found
+#   kubectl apply -f k8s/kafka/topics-job.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-topics
+  labels:
+    app: kafka
+data:
+  create-topics.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    BOOTSTRAP="${KAFKA_BOOTSTRAP_SERVER:-kafka:9092}"
+    PARTITIONS="${KAFKA_TOPIC_PARTITIONS:-3}"
+    # Un seul broker : pas de replique.
+    REPLICATION=1
+
+    TOPICS=(
+      # O03 : publiee a la validation du paiement, consommee par le panier
+      # (P06) et les notifications (N02).
+      "order.paid"
+      # C09 : baisse de prix et retour en stock, consommees par les alertes
+      # (N03).
+      "catalogue.evenements"
+      # S03 : reponse d'un collaborateur a un ticket, consommee par les
+      # notifications (N02).
+      "sav.reponse-admin"
+    )
+
+    # K02 : un topic de rebut par topic metier, nom = topic + ".dlt". Un
+    # message y arrive une fois ses tentatives epuisees. Avec l'auto-creation
+    # coupee, un DLT absent ferait echouer la publication, et le message
+    # serait rejoue en boucle au lieu d'etre ecarte.
+    TOPICS+=("${TOPICS[@]/%/.dlt}")
+
+    for topic in "${TOPICS[@]}"; do
+      echo "topic ${topic} : creation si absent"
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" \
+        --create --if-not-exists \
+        --topic "${topic}" \
+        --partitions "${PARTITIONS}" \
+        --replication-factor "${REPLICATION}"
+    done
+
+    echo "topics presents sur le broker :"
+    /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-create-topics
+  labels:
+    app: kafka
+spec:
+  backoffLimit: 6
+  # Une heure pour lire ses logs, puis le Job disparait : le prochain apply
+  # le recree et rejoue le script.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      # Pas « app: kafka » : ce pod serait sinon selectionne par les Services
+      # kafka et kafka-headless et par le selecteur du StatefulSet.
+      labels:
+        app: kafka-topics
+        job: create-topics
+    spec:
+      # Le Job peut demarrer avant que le broker reponde : il echoue, et
+      # Kubernetes le relance jusqu'a ce que Kafka soit la.
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Exige par le niveau « restricted » des Pod Security Standards, que
+        # le namespace de l'ecole audite.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: create-topics
+          image: apache/kafka:3.8.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/bash", "/scripts/create-topics.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVER
+              value: "kafka:9092"
+            - name: KAFKA_TOPIC_PARTITIONS
+              value: "3"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: kafka-topics
+            defaultMode: 0555
