@@ -1,0 +1,63 @@
+# Apercu local du monitoring Kafka : kafka-exporter, Prometheus et Grafana
+# branches sur le Kafka de la stack du depot e-commerce-BACK.
+#
+# A lancer APRES la stack back-end, dont il rejoint le reseau Docker :
+#
+#   (dans e-commerce-BACK)  docker compose up -d
+#   (ici)                   docker compose -f monitoring/local/compose.yaml up -d
+#
+# Grafana : http://localhost:3030 (admin / admin), dashboard « Kafka ».
+# Prometheus : http://localhost:9090.
+#
+# Sert a mettre au point les dashboards : le Prometheus et le Grafana du
+# cluster arrivent avec D06 (#17). Le dashboard est lu directement dans
+# monitoring/grafana/dashboards : une modification du fichier apparait dans
+# Grafana sans redemarrage.
+name: ecommerce-monitoring
+
+services:
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: ecommerce-kafka-exporter
+    # Memes arguments que k8s/kafka-exporter/deployment.yaml.
+    command: ["--kafka.server=kafka:9092", "--kafka.version=3.8.0"]
+    networks: [ecommerce]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: ecommerce-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [ecommerce]
+    depends_on: [kafka-exporter]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: ecommerce-grafana
+    environment:
+      # Valeurs de developpement, pour un Grafana local jetable.
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: system
+    ports:
+      - "${GRAFANA_PORT:-3030}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [ecommerce]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+networks:
+  # Le reseau de la stack e-commerce-BACK (projet « ecommerce »), ou Kafka
+  # repond sur kafka:9092.
+  ecommerce:
+    name: ecommerce_default
+    external: true
