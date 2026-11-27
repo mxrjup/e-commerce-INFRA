@@ -1,18 +1,18 @@
-# Apercu local du monitoring Kafka : kafka-exporter, Prometheus et Grafana
-# branches sur le Kafka de la stack du depot e-commerce-BACK.
+# Apercu local du monitoring : kafka-exporter, Prometheus et Grafana branches
+# sur la stack du depot e-commerce-BACK (Kafka et les huit services).
 #
 # A lancer APRES la stack back-end, dont il rejoint le reseau Docker :
 #
 #   (dans e-commerce-BACK)  docker compose up -d
 #   (ici)                   docker compose -f monitoring/local/compose.yaml up -d
 #
-# Grafana : http://localhost:3030 (admin / admin), dashboard « Kafka ».
+# Grafana : http://localhost:3030 (admin / admin), dashboards « Services » et « Kafka ».
 # Prometheus : http://localhost:9090.
 #
-# Sert a mettre au point les dashboards : le Prometheus et le Grafana du
-# cluster arrivent avec D06 (#17). Le dashboard est lu directement dans
-# monitoring/grafana/dashboards : une modification du fichier apparait dans
-# Grafana sans redemarrage.
+# Memes fichiers que le cluster (monitoring/kustomization.yaml, D06) : la
+# configuration de Prometheus, le provisioning et les dashboards de Grafana.
+# Les dashboards sont lus directement dans monitoring/grafana/dashboards : une
+# modification du fichier apparait dans Grafana sans redemarrage.
 name: ecommerce-monitoring
 
 services:
@@ -33,7 +33,7 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks: [ecommerce]
     depends_on: [kafka-exporter]
     restart: unless-stopped
@@ -49,7 +49,7 @@ services:
     ports:
       - "${GRAFANA_PORT:-3030}:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks: [ecommerce]
     depends_on: [prometheus]
