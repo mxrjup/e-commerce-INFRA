@@ -141,6 +141,7 @@ kubectl create secret generic keycloak-idp         --from-env-file=k8s/secrets/k
 | `keycloak-idp` | non | Keycloak, fournisseurs Google et Apple |
 | `ecommerce-tls` | voir 3. | l'Ingress |
 | `ghcr-pull` | voir 4. | le kubelet, pour tirer les images |
+| `grafana-admin` | pour `monitoring/` | Grafana : son compte d'administration (voir « Supervision ») |
 
 > **Pas de `"` ni de `\`** dans les valeurs de `keycloak-smtp` et
 > `keycloak-idp` : Keycloak les recopie telles quelles dans le JSON du realm
@@ -295,8 +296,10 @@ bloquée faute de quota.
 
 ### Ce qui reste à savoir
 
-- **Prometheus (`D06` #17)** : s'il scrape les services depuis un autre
-  namespace, `backend-from-gateway` devra l'autoriser.
+- **Le budget CPU avec la supervision** : Prometheus et Grafana ajoutent
+  500m de limites (voir « Supervision »). Avec les six services à venir, Kafka
+  UI et kafka-exporter, le total passe 8 cœurs : à trancher en équipe, par
+  exemple en ramenant la limite des services Java de 500m à 400m.
 - **Les pages de retour Stripe** (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`)
   pointent vers `PUBLIC_URL/checkout/...` : à confirmer avec le parcours de
   paiement mobile (`O11` #35).
@@ -343,16 +346,10 @@ Interroge le broker comme un client et expose, pour chaque topic et partition,
 les offsets (d'où le débit et le volume) et, pour chaque consumer group, le
 retard. Rien à configurer côté Kafka.
 
-Le `Service` porte les annotations `prometheus.io/scrape`. Le Prometheus du
-cluster (`D06` #17) doit le scraper, par ces annotations ou par un job
-explicite :
-
-```yaml
-scrape_configs:
-  - job_name: kafka-exporter
-    static_configs:
-      - targets: ["kafka-exporter:9308"]
-```
+Le Prometheus de la supervision le lit par le job `kafka-exporter` de
+`monitoring/prometheus/prometheus.yml` (voir « Supervision »). Le `Service`
+porte aussi les annotations `prometheus.io/scrape`, pour un Prometheus à
+découverte automatique.
 
 ### Le dashboard Grafana « Kafka »
 
@@ -379,9 +376,9 @@ offset : un service qui n'a encore rien consommé n'est pas dans la liste.
 
 ### Prévisualiser le dashboard en local
 
-Le Prometheus et le Grafana du cluster arrivent avec `D06`. En attendant, et
-pour mettre au point un dashboard, `monitoring/local/` lance kafka-exporter,
-Prometheus et Grafana branchés sur le Kafka de la stack du back-end :
+Pour mettre au point un dashboard, `monitoring/local/` lance kafka-exporter,
+Prometheus et Grafana branchés sur la stack du back-end, avec les mêmes
+fichiers que le cluster (voir « Supervision ») :
 
 ```bash
 # dans e-commerce-BACK
@@ -391,11 +388,96 @@ docker compose -f monitoring/local/compose.yaml up -d
 ```
 
 Grafana sur <http://localhost:3030> (`admin` / `admin`), dossier
-« e-commerce », dashboard « Kafka ». Prometheus sur <http://localhost:9090>.
+« e-commerce », dashboards « Kafka » et « Services ». Prometheus sur <http://localhost:9090>.
 Le dashboard est lu directement depuis `monitoring/grafana/dashboards/` :
 une modification du JSON apparaît en une dizaine de secondes, sans
 redémarrage. Pour garder une modification faite dans l'interface : *Export* →
 *Export as JSON* et remplacer le fichier.
+
+## Supervision : Prometheus et Grafana
+
+`D06` (#17). Chaque service du back-end expose ses métriques sur
+`/actuator/prometheus` (README de `e-commerce-BACK`, « Supervision ») ;
+Prometheus les lit toutes les 15 s, Grafana les affiche.
+
+| Fichier | Rôle |
+|---|---|
+| `monitoring/prometheus/prometheus.yml` | les cibles : les huit services, kafka-exporter, Prometheus lui-même |
+| `monitoring/grafana/provisioning/` | la source Prometheus et l'emplacement des dashboards, lus au démarrage |
+| `monitoring/grafana/dashboards/` | les dashboards « Services » et « Kafka » |
+| `monitoring/k8s/` | Prometheus (volume de 2 Gio, 7 jours), Grafana, leurs règles réseau |
+| `monitoring/local/compose.yaml` | les mêmes fichiers sur son poste |
+
+### Déployer
+
+Après la plateforme (`k8s/`) et Kafka, avec le Secret `grafana-admin` :
+
+```bash
+cp k8s/secrets.example/grafana-admin.env.example k8s/secrets/grafana-admin.env
+# choisir un mot de passe, puis :
+kubectl create secret generic grafana-admin --from-env-file=k8s/secrets/grafana-admin.env
+kubectl apply -k monitoring/
+kubectl apply -k k8s/          # backend-from-gateway laisse passer Prometheus
+```
+
+À part de `k8s/`, comme Kafka : la plateforme ne dépend pas de sa
+supervision. Rien n'est exposé sur Internet :
+
+```bash
+kubectl port-forward svc/grafana 3030:3000       # http://localhost:3030
+kubectl port-forward svc/prometheus 9090:9090    # http://localhost:9090, onglet Status > Targets
+```
+
+Grafana n'a pas de volume : ses dashboards et sa source viennent des
+fichiers, et une modification faite dans l'interface est perdue au
+redémarrage. On modifie le JSON (en local, il est relu en direct), puis
+`kubectl apply -k monitoring/` : le suffixe de hash des ConfigMaps redémarre
+Grafana avec la nouvelle version.
+
+### Le dashboard « Services »
+
+Filtre par service en haut de page ; le trafic des sondes et de Prometheus
+(`/actuator/**`) est exclu. La gateway relaie sans route Spring : ses
+requêtes HTTP apparaissent en `UNKNOWN`, d'où la section « Gateway », qui lit
+la mesure par route de Spring Cloud Gateway.
+
+| Section | Ce qu'on y lit |
+|---|---|
+| Vue d'ensemble | services joignables, et l'historique de chacun (en marche, injoignable) |
+| Trafic HTTP | requêtes par seconde, **part d'erreurs 5xx**, **temps de réponse au 95e percentile**, les dix routes les plus lentes |
+| Gateway | par route (`catalog`, `cart`, `orders`…) : requêtes, part de 4xx et 5xx, temps de réponse vu par le client |
+| JVM et base | mémoire heap, CPU, connexions actives et en attente du pool, pauses du GC, temps depuis le démarrage |
+
+Ce qui doit faire réagir : un service **injoignable** (arrêté, en
+redémarrage en boucle, ou pas encore déployé), des **5xx** qui montent, un
+**p95** qui décolle sur une route, une heap qui reste près de 512 Mio (la
+limite du conteneur) ou des **connexions en attente** au pool.
+
+### Choix
+
+- **Une liste fixe de cibles** plutôt que la découverte Kubernetes : celle-ci
+  demande un `Role` pour lister les pods, que le namespace n'autorise pas
+  forcément. Un service pas encore déployé apparaît « injoignable » ; en
+  ajouter un, c'est trois lignes dans `prometheus.yml`.
+- **Les mêmes fichiers en local et sur le cluster** : ce qu'on met au point
+  sur son poste est ce qui part.
+- **Réseau** : Prometheus n'accepte que Grafana, Grafana n'accepte rien
+  (`kubectl port-forward` ne passe pas par ces règles), et
+  `backend-from-gateway` laisse Prometheus joindre les services.
+- **Lecture seule** : les deux tournent sans root, système de fichiers en
+  lecture seule, comme les services.
+
+### Budget
+
+| | CPU réservé | CPU limite | Mémoire réservée | Mémoire limite |
+|---|---|---|---|---|
+| Prometheus | 50m | 300m | 256 Mio | 512 Mio |
+| Grafana | 25m | 200m | 128 Mio | 256 Mio |
+
+Un volume de plus (2 Gio sur la classe par défaut). **Attention à la limite
+CPU** : avec les six services à venir, Kafka UI et kafka-exporter, la
+plateforme était déjà à 7,6 cœurs sur 8 ; la supervision la fait passer à
+8,1. Voir « Ce qui reste à savoir ».
 
 ## Pas encore en place
 
@@ -404,5 +486,4 @@ redémarrage. Pour garder une modification faite dans l'interface : *Export* →
 | Images des services sur GHCR | `D03` #54 |
 | Back-office web sur l'Ingress (`/`) | `T06` #11 |
 | Déploiement automatique et rollback par tag | `D05` #38 |
-| Prometheus et Grafana sur le cluster, dashboards applicatifs | `D06` #17 |
 | Documentation de déploiement complète | `D08` #89 |
