@@ -1,0 +1,35 @@
+# La supervision (D06) : Prometheus, Grafana et leurs dashboards.
+#
+#   kubectl kustomize monitoring/     # voir ce qui sera applique
+#   kubectl apply -k monitoring/      # appliquer
+#
+# A part de k8s/, comme Kafka : la plateforme ne depend pas de sa supervision,
+# et un dashboard modifie se deploie sans toucher aux services. Le Secret
+# grafana-admin se cree a la main avant, voir k8s/secrets.example/.
+#
+# Les fichiers sont ceux de l'apercu local (monitoring/local) : ce qu'on met
+# au point sur son poste est exactement ce qui part sur le cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - k8s/prometheus.yaml
+  - k8s/grafana.yaml
+  - k8s/network-policies.yaml
+
+# Le suffixe de hash ajoute par kustomize redemarre Prometheus ou Grafana
+# quand un de ces fichiers change : la nouvelle version est lue au demarrage.
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus/prometheus.yml
+  - name: grafana-datasources
+    files:
+      - grafana/provisioning/datasources/prometheus.yaml
+  - name: grafana-dashboard-providers
+    files:
+      - grafana/provisioning/dashboards/dashboards.yaml
+  - name: grafana-dashboards
+    files:
+      - grafana/dashboards/services.json
+      - grafana/dashboards/kafka.json

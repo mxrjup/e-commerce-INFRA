@@ -1,0 +1,127 @@
+# Grafana (D06) : les dashboards « Services » et « Kafka », sur Prometheus.
+#
+# Tout est fourni au demarrage (provisioning) : la source Prometheus et les
+# dashboards viennent de monitoring/grafana/, rien ne se configure a la main.
+# Pas de volume : une modification faite dans l'interface est perdue au
+# redemarrage. Un dashboard se modifie dans son fichier JSON, puis
+# « kubectl apply -k monitoring/ ».
+#
+# Pas d'Ingress : il s'ouvre par
+#   kubectl port-forward svc/grafana 3030:3000   puis http://localhost:3030
+# avec le compte du Secret grafana-admin (k8s/secrets.example/).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # L'utilisateur « grafana » de l'image.
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: grafana
+          # Meme image que l'apercu local (monitoring/local/compose.yaml).
+          image: grafana/grafana:12.1.1
+          envFrom:
+            # GF_SECURITY_ADMIN_USER et GF_SECURITY_ADMIN_PASSWORD.
+            - secretRef:
+                name: grafana-admin
+          env:
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            - name: GF_USERS_DEFAULT_THEME
+              value: system
+            # Aucun appel sortant : ni statistiques d'usage, ni recherche de mises a jour.
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES
+              value: "false"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+          volumeMounts:
+            # Sa base SQLite (sessions, preferences) : jetable, tout le reste est provisionne.
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: tmp
+              mountPath: /tmp
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: dashboard-providers
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            # Le chemin que lit le provider (monitoring/grafana/provisioning/dashboards).
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-providers
+          configMap:
+            name: grafana-dashboard-providers
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

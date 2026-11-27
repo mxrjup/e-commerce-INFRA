@@ -1,0 +1,36 @@
+# Qui peut joindre la supervision (D06). « kubectl port-forward » ne traverse
+# pas ces filtres : c'est par la qu'on ouvre Grafana et Prometheus.
+#
+# Dans l'autre sens, Prometheus doit joindre les services : c'est la regle
+# backend-from-gateway de k8s/services/network-policies.yaml qui l'autorise.
+
+# Prometheus n'est interroge que par Grafana.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-from-grafana
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+# Grafana n'accepte rien du reseau : il ne s'ouvre que par port-forward.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-port-forward-only
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes: ["Ingress"]
+  ingress: []

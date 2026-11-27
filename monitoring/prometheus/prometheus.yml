@@ -1,0 +1,44 @@
+# Ce que Prometheus lit, et ou (D06). Le meme fichier sert au cluster
+# (monitoring/kustomization.yaml) et a l'apercu local (monitoring/local) :
+# les noms et les ports des services y sont les memes.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Les huit services du back-end. Une liste fixe plutot que la decouverte
+  # Kubernetes : elle demande un Role pour lister les pods, que le namespace
+  # de l'ecole n'autorise pas forcement. Un service pas encore deploye apparait
+  # « injoignable » dans le dashboard. Ajouter un service = ajouter un bloc.
+  - job_name: services
+    metrics_path: /actuator/prometheus
+    # Chaque service etiquette deja ses mesures « application » (common-lib) :
+    # on garde la sienne, identique a celle donnee ici, sans « exported_ ».
+    honor_labels: true
+    static_configs:
+      - targets: ["api-gateway:8080"]
+        labels: {application: api-gateway}
+      - targets: ["catalog-service:8081"]
+        labels: {application: catalog-service}
+      - targets: ["user-service:8082"]
+        labels: {application: user-service}
+      - targets: ["cart-service:8083"]
+        labels: {application: cart-service}
+      - targets: ["order-service:8084"]
+        labels: {application: order-service}
+      - targets: ["notification-service:8085"]
+        labels: {application: notification-service}
+      - targets: ["support-service:8086"]
+        labels: {application: support-service}
+      - targets: ["mcp-service:8087"]
+        labels: {application: mcp-service}
+
+  # Topics et consumer groups (K03), dashboard « Kafka ».
+  - job_name: kafka-exporter
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # Prometheus lui-meme : son espace disque et la duree de ses lectures.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
