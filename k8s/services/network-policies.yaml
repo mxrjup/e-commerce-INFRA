@@ -24,6 +24,11 @@ spec:
         - podSelector:
             matchLabels:
               tier: backend
+        # Prometheus lit /actuator/prometheus (D06, monitoring/). Il n'envoie
+        # jamais X-Auth-Subject : il ne lit que des metriques.
+        - podSelector:
+            matchLabels:
+              app: prometheus
 ---
 # La base n'est joignable que par ses clients. L'administration passe par
 # « kubectl exec » ou « kubectl port-forward », qui ne traversent pas ce
