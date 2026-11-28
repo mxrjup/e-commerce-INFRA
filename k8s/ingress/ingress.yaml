@@ -12,20 +12,25 @@
 # port-forward », donc avec les droits du kubeconfig. Publier /auth/realms en
 # entier exposerait la connexion admin a tout internet.
 #
-# L'hote est un parametre : k8s/params.env, reporte ici par kustomize. Pas de
-# ingressClassName : la classe par defaut du cluster s'applique (Traefik sur
-# k3s).
+# L'hote est un parametre : k8s/params.env, reporte ici par kustomize.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ecommerce
+  annotations:
+    # Le seul emetteur de certificats qui fonctionne dans le namespace de
+    # l'ecole : cert-manager cree et renouvelle seul le certificat Let's
+    # Encrypt de l'hote.
+    cert-manager.io/cluster-issuer: letsencrypt-etudiants
 spec:
-  # Le certificat du Secret « ecommerce-tls », voir le README. Absent,
-  # Traefik presente son certificat par defaut, auto-signe.
+  ingressClassName: traefik
   tls:
     - hosts:
         - PUBLIC_HOST
-      secretName: ecommerce-tls
+      # Le Secret du certificat deja emis pour cet hote par l'ecole (il
+      # servait le nginx d'accueil) : cert-manager le reprend et le renouvelle,
+      # sans nouvelle emission.
+      secretName: nginx-tls
   rules:
     - host: PUBLIC_HOST
       http:
