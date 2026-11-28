@@ -1,0 +1,21 @@
+# Cible de scrape de Prometheus (D06 #17). Les annotations prometheus.io/*
+# sont la convention lue par la configuration Prometheus de reference pour
+# Kubernetes ; le job a ajouter est aussi donne dans le README.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  labels:
+    app: kafka-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9308"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka-exporter
+  ports:
+    - name: metrics
+      port: 9308
+      targetPort: metrics

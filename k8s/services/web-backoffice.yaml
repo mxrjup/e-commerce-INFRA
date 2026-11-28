@@ -1,0 +1,96 @@
+# Le back-office web (e-commerce-WEB-FRONT), servi par nginx sans root sur « / »
+# de l'hote public. Il appelle Keycloak (/auth) et la gateway (/api) sur le meme
+# hote : l'image ne contient aucune adresse, elle sert tout environnement.
+#
+# Il sert aussi /checkout/success et /checkout/cancel, les pages de retour
+# Stripe de l'application mobile (STRIPE_SUCCESS_URL et STRIPE_CANCEL_URL
+# d'order-service), qui renvoient dans l'application.
+#
+# Pas de label « tier: backend » : il recoit le trafic de l'Ingress, comme la
+# gateway, et ne parle a aucun service du cluster (le navigateur le fait).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-backoffice
+  labels:
+    app: web-backoffice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-backoffice
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: web-backoffice
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # L'utilisateur nginx de l'image nginx-unprivileged.
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web-backoffice
+          image: ghcr.io/mxrjup/e-commerce-web-front
+          # Tag mobile (dev) tant que kustomization.yaml le fixe ; le
+          # deploiement par tag du front pose un digest.
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            # nginx-unprivileged ecrit son pid et ses fichiers temporaires
+            # dans /tmp ; le reste du systeme de fichiers est en lecture seule.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-backoffice
+  labels:
+    app: web-backoffice
+spec:
+  selector:
+    app: web-backoffice
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,15 @@
+# Adresse de la base pour Keycloak et les services : « postgres:5432 », le
+# meme nom que dans le Docker Compose local du back-end.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

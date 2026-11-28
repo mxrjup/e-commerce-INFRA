@@ -1,0 +1,77 @@
+# Kafka UI (K03) : topics, messages, consumer groups et leur retard, DLT.
+#
+# En LECTURE SEULE sur le cluster : ni creation ni suppression de topic, ni
+# publication de message. Elle n'a pas d'authentification propre, et n'est
+# donc exposee par aucun Ingress : on y accede par `kubectl port-forward`,
+# c'est-a-dire avec les droits du kubeconfig. Les messages contiennent des
+# identifiants de commande et d'utilisateur : ne pas l'exposer sans ajouter
+# une authentification devant.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+  labels:
+    app: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-ui
+  template:
+    metadata:
+      labels:
+        app: kafka-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # L'image declare un utilisateur par son nom (kafkaui) : Kubernetes
+        # exige un UID numerique pour verifier runAsNonRoot.
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kafka-ui
+          image: ghcr.io/kafbat/kafka-ui:v1.4.2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: "ecommerce"
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: "kafka:9092"
+            - name: KAFKA_CLUSTERS_0_READONLY
+              value: "true"
+            # Configuration figee par ces variables, pas modifiable depuis l'UI.
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: "false"
+            # Tas cale sur la limite du conteneur : ~360 Mio mesures au repos.
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5

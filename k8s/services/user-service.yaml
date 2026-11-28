@@ -1,0 +1,138 @@
+# Les utilisateurs : profils, adresses, collaborateurs et reglages de la
+# boutique. Joignable seulement depuis la gateway et les autres services.
+#
+# Il valide lui-meme les jetons, et gere les collaborateurs par l'Admin API de
+# Keycloak avec le compte de service du client confidentiel « user-service »
+# (Secret keycloak-user-service, voir le README).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  labels:
+    app: user-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: user-service
+        tier: backend
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: user-service
+          image: ghcr.io/mxrjup/e-commerce-back/user-service
+          # Tag mobile (dev) tant que kustomization.yaml le fixe ; le
+          # deploiement par tag (deploy.sh du back-end) pose un digest.
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8082
+          env:
+            - name: PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: PUBLIC_URL
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: ecommerce_users
+            - name: SPRING_DATASOURCE_USERNAME
+              value: user_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: USERS_DB_PASSWORD
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            # Comme la gateway : l'issuer est l'URL publique, celle du jeton ; les
+            # cles se recuperent sur l'adresse interne de Keycloak.
+            - name: KEYCLOAK_ISSUER_URI
+              value: "$(PUBLIC_URL)/auth/realms/ecommerce"
+            - name: KEYCLOAK_JWK_SET_URI
+              value: http://keycloak:8080/auth/realms/ecommerce/protocol/openid-connect/certs
+            # Admin API par l'adresse interne, avec le chemin /auth de Keycloak.
+            - name: KEYCLOAK_ADMIN_SERVER_URL
+              value: http://keycloak:8080/auth
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-user-service
+                  key: USER_SERVICE_CLIENT_SECRET
+            # Cle partagee des lectures internes (X-Internal-Key) entre services.
+            - name: MCP_USERS_READ_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: internal-read-key
+                  key: MCP_USERS_READ_KEY
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: 400m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 48
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  labels:
+    app: user-service
+spec:
+  selector:
+    app: user-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
