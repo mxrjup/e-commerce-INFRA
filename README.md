@@ -16,10 +16,13 @@ kubectl get pods
 Le kubeconfig fixe déjà le namespace par défaut : les manifests ne portent donc
 pas de champ `namespace`, et s'appliquent là où pointe votre contexte.
 
-Le namespace est contraint : **4 cœurs et 8 Gio réservés** (8 cœurs et 16 Gio
-en limites), **40 pods**, **20 services** (ni NodePort ni LoadBalancer),
-**10 volumes pour 50 Gio** (dont au plus 3 volumes et 10 Gio sur la classe
-`local-path` ; la classe par défaut est `longhorn`). Ce budget est partagé par
+Le namespace est `polytech-dams5-03`, publié sur
+`https://dams5-03.students.polytech.lange.xyz`. Il est contraint : **4 cœurs
+et 8 Gio réservés** (16 cœurs et 24 Gio en limites,
+`kubectl describe resourcequota`), **40 pods**, **40 services** (ni NodePort ni
+LoadBalancer), **10 volumes pour 50 Gio** (dont au plus 10 Gio sur la classe
+`local-path`, celle de PostgreSQL ; un PVC sans classe va sur `nfs-tower`, un
+stockage réseau). Ce budget est partagé par
 tous les services : chaque manifest doit déclarer des `requests` modestes,
 sinon un déploiement bloque faute de quota.
 
@@ -160,7 +163,7 @@ kubectl create secret generic keycloak-idp         --from-env-file=k8s/secrets/k
 | `keycloak-user-service` | oui | Keycloak (secret du client `user-service`) et `user-service` |
 | `internal-read-key` | oui | `user-service`, `notification-service`, `support-service`, `mcp-service` |
 | `keycloak-idp` | non | Keycloak, fournisseurs Google et Apple |
-| `ecommerce-tls` | voir 3. | l'Ingress |
+| `nginx-tls` | déjà là, voir 3. | l'Ingress |
 | `ghcr-pull` | voir 4. | le kubelet, pour tirer les images |
 | `grafana-admin` | pour `monitoring/` | Grafana : son compte d'administration (voir « Supervision ») |
 
@@ -168,16 +171,11 @@ kubectl create secret generic keycloak-idp         --from-env-file=k8s/secrets/k
 > `keycloak-idp` : Keycloak les recopie telles quelles dans le JSON du realm
 > avant de le lire, et l'import échoue.
 
-**3. Le certificat TLS.** L'Ingress présente le Secret `ecommerce-tls`. Avec
-un certificat fourni :
-
-```bash
-kubectl create secret tls ecommerce-tls --cert=chemin/vers/cert.pem --key=chemin/vers/key.pem
-```
-
-Avec cert-manager sur le cluster, ajouter à l'Ingress l'annotation
-`cert-manager.io/cluster-issuer: <nom>` : il crée le Secret seul. Sans aucun
-des deux, Traefik présente son certificat auto-signé. **Sans TLS du tout**, le
+**3. Le certificat TLS.** Rien à faire : l'Ingress porte l'annotation
+`cert-manager.io/cluster-issuer: letsencrypt-etudiants` (le seul émetteur qui
+fonctionne dans le namespace) et présente le Secret `nginx-tls`, le certificat
+Let's Encrypt déjà émis par l'école pour l'hôte. cert-manager le renouvelle.
+Sans certificat valide, Traefik présenterait son certificat auto-signé. **Sans TLS du tout**, le
 realm refuse les connexions venant de l'extérieur (`sslRequired: external`) :
 c'est voulu, ne pas l'assouplir.
 
