@@ -85,9 +85,9 @@ Le script est idempotent, le rejouer ne touche à rien.
 > réappliquer, comme ci-dessus, et vérifier `kubectl logs job/kafka-create-topics`
 > (six topics).
 
-**Disque.** La rétention est bornée par partition : 128 Mio, plus un segment
-actif de 64 Mio. Avec 18 partitions (3 topics, 3 DLT, 3 partitions chacun),
-le pire cas est d'environ 3,4 Gio sur le volume de 5 Gio. **Tout nouveau topic
+**Disque.** La rétention est bornée par partition : 96 Mio, plus un segment
+actif de 64 Mio. Avec 24 partitions (4 topics, 4 DLT, 3 partitions chacun),
+le pire cas est d'environ 3,75 Gio sur le volume de 5 Gio. **Tout nouveau topic
 ajoute 6 partitions** (lui et son DLT) : refaire ce calcul dans
 `statefulset.yaml`.
 
