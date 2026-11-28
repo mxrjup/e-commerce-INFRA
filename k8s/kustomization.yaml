@@ -23,6 +23,7 @@ resources:
   - services/notification-service.yaml
   - services/support-service.yaml
   - services/mcp-service.yaml
+  - services/web-backoffice.yaml
   - services/network-policies.yaml
   - ingress/ingress.yaml
 
@@ -60,6 +61,10 @@ images:
   - name: ghcr.io/mxrjup/e-commerce-back/support-service
     newTag: dev
   - name: ghcr.io/mxrjup/e-commerce-back/mcp-service
+    newTag: dev
+  # Le back-office, publie par la CI de e-commerce-WEB-FRONT et livre par son
+  # propre deploiement par tag.
+  - name: ghcr.io/mxrjup/e-commerce-web-front
     newTag: dev
 
 # L'hote de params.env reporte dans l'Ingress.

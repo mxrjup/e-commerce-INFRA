@@ -107,7 +107,8 @@ partie : il s'applique **avant**, voir la section précédente.
 | `PersistentVolumeClaim/catalog-images` | les photos des variantes, 2 Gio, monté par `catalog-service` |
 | `NetworkPolicy/backend-from-gateway` | les services n'acceptent que la gateway et les autres services |
 | `NetworkPolicy/postgres-from-clients` | la base n'accepte que les services et Keycloak |
-| `Ingress/ecommerce` | l'hôte public : `/api`, `/mcp` et `/sse` → gateway, `/auth/realms/ecommerce` et `/auth/resources` → Keycloak |
+| `Deployment` et `Service` `web-backoffice` | le back-office web (`e-commerce-WEB-FRONT`), nginx ; aussi les pages de retour Stripe de l'application mobile |
+| `Ingress/ecommerce` | l'hôte public : `/api`, `/mcp` et `/sse` → gateway, `/auth/realms/ecommerce` et `/auth/resources` → Keycloak, tout le reste → `web-backoffice` |
 | `ConfigMap/platform-config-*` | `PUBLIC_HOST` et `PUBLIC_URL`, lus par les pods |
 
 | Service | Port | Base | Lit aussi |
@@ -340,16 +341,17 @@ service concerné.
 | Keycloak | 250m | 1 | 1 Gio | 1 Gio |
 | un service Java (×8) | 50m | 400m | 384 Mio | 512 Mio |
 | Kafka UI | 50m | 500m | 384 Mio | 512 Mio |
+| `web-backoffice` (nginx) | 10m | 100m | 32 Mio | 64 Mio |
 | kafka-exporter | 10m | 100m | 32 Mio | 64 Mio |
 | Prometheus et Grafana (`monitoring/`) | 75m | 500m | 384 Mio | 768 Mio |
-| **Total** | **1,1 / 4** | **6,8 / 8** | **6944 Mio / 8 Gio** | **8,3 Gio / 16 Gio** |
+| **Total** | **1,2 / 4** | **6,9 / 8** | **6976 Mio / 8 Gio** | **8,4 Gio / 16 Gio** |
 
 Les services consomment entre 170 et 240 Mio une fois démarrés. **La limite
 CPU est la contrainte qui tient** : elle a été ramenée de 500m à 400m par
 service Java pour que les huit tiennent avec la supervision (la sonde de
 démarrage leur laisse donc 4 minutes au lieu de 3). Une mise à jour
 progressive crée le nouveau pod avant d'arrêter l'ancien (`maxSurge: 1`) : il
-reste 1,2 cœur de marge, assez pour **un** service à la fois (et le Job des
+reste 1,1 cœur de marge, assez pour **un** service à la fois (et le Job des
 topics, 500m). Mettre à jour tous les services en même temps dépasserait le
 quota : le déploiement par tag du back-end les met donc à jour l'un après
 l'autre. `catalog-service` est en `Recreate` : son volume ne s'attache qu'à
@@ -357,9 +359,10 @@ un pod.
 
 ### Ce qui reste à savoir
 
-- **Les pages de retour Stripe** (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`)
-  pointent vers `PUBLIC_URL/checkout/...` : à confirmer avec le parcours de
-  paiement mobile (`O11` #35).
+- **Les pages de retour Stripe** (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`,
+  `PUBLIC_URL/checkout/...`) sont servies par `web-backoffice` et renvoient
+  dans l'application mobile. Le webhook se déclare dans le tableau de bord
+  Stripe : `PUBLIC_URL/api/orders/webhook`.
 - **Les emails de `notification-service`** partent par le serveur de
   `keycloak-smtp` en STARTTLS ; un serveur en TLS direct (port 465) demande un
   réglage de plus côté service.
@@ -542,5 +545,4 @@ namespace ».
 
 | Sujet | Issue |
 |---|---|
-| Back-office web sur l'Ingress (`/`) | `T06` #11 |
 | Documentation de déploiement complète | `D08` #89 |

@@ -80,8 +80,10 @@ spec:
                 secretKeyRef:
                   name: stripe
                   key: STRIPE_WEBHOOK_SECRET
-            # Pages de retour apres paiement, a confirmer avec le parcours
-            # mobile (O11, #35). {CHECKOUT_SESSION_ID} est remplace par Stripe.
+            # Pages de retour apres paiement, servies par web-backoffice : en
+            # HTTPS comme le recommande Stripe, elles renvoient dans
+            # l'application mobile (ecommerce://checkout-...).
+            # {CHECKOUT_SESSION_ID} est remplace par Stripe.
             - name: STRIPE_SUCCESS_URL
               value: "$(PUBLIC_URL)/checkout/success?session_id={CHECKOUT_SESSION_ID}"
             - name: STRIPE_CANCEL_URL
