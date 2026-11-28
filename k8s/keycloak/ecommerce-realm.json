@@ -139,6 +139,20 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "user-service",
+      "name": "Service Utilisateurs",
+      "description": "Client confidentiel du service Utilisateurs (U04) : son compte de service appelle l'Admin API de Keycloak pour gerer les collaborateurs. Aucun flux utilisateur.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${USER_SERVICE_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
   "identityProviders": [
@@ -181,6 +195,16 @@
         "defaultScope": "openid name email",
         "syncMode": "IMPORT",
         "uiLocales": "false"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-user-service",
+      "enabled": true,
+      "serviceAccountClientId": "user-service",
+      "clientRoles": {
+        "realm-management": ["query-users", "view-users", "manage-users", "view-realm"]
       }
     }
   ]
