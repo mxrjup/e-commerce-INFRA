@@ -107,6 +107,13 @@ spec:
             # ses jetons, celui qu'attend la gateway.
             - name: KEYCLOAK_FRONTEND_URL
               value: "$(PUBLIC_URL)/auth"
+            # Secret du client confidentiel « user-service » (U04), le meme
+            # que celui que lit user-service.
+            - name: USER_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-user-service
+                  key: USER_SERVICE_CLIENT_SECRET
           envFrom:
             # SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, SMTP_PASSWORD :
             # obligatoire, le realm exige la verification des emails.

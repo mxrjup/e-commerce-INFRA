@@ -29,6 +29,11 @@ data:
     SQL
     }
 
-    create_database keycloak      keycloak        "$KEYCLOAK_DB_PASSWORD"
-    create_database cart_service  ecommerce_cart  "$CART_DB_PASSWORD"
-    create_database order_service ecommerce_order "$ORDER_DB_PASSWORD"
+    create_database keycloak             keycloak                "$KEYCLOAK_DB_PASSWORD"
+    create_database catalog_service      ecommerce_catalog       "$CATALOG_DB_PASSWORD"
+    create_database user_service         ecommerce_users         "$USERS_DB_PASSWORD"
+    create_database cart_service         ecommerce_cart          "$CART_DB_PASSWORD"
+    create_database order_service        ecommerce_order         "$ORDER_DB_PASSWORD"
+    create_database notification_service ecommerce_notifications "$NOTIFICATIONS_DB_PASSWORD"
+    create_database support_service      ecommerce_support       "$SUPPORT_DB_PASSWORD"
+    create_database mcp_service          ecommerce_mcp           "$MCP_DB_PASSWORD"

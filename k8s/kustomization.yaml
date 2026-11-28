@@ -16,8 +16,14 @@ resources:
   - keycloak/service.yaml
   - keycloak/deployment.yaml
   - services/api-gateway.yaml
+  - services/catalog-service.yaml
+  - services/user-service.yaml
   - services/cart-service.yaml
   - services/order-service.yaml
+  - services/notification-service.yaml
+  - services/support-service.yaml
+  - services/mcp-service.yaml
+  - services/web-backoffice.yaml
   - services/network-policies.yaml
   - ingress/ingress.yaml
 
@@ -34,14 +40,31 @@ configMapGenerator:
       - keycloak/ecommerce-realm.json
 
 # Le tag des images du back-end, a un seul endroit. Publiees par la CI du
-# back-end (D03, #54) ; le deploiement par tag (D05, #38) mettra ici la
-# version livree.
+# back-end (D03, #54). Ce tag ne sert qu'a creer les Deployments : une
+# version se livre ensuite par le deploiement par tag du back-end (D05, #38,
+# .github/scripts/deploy.sh), qui pose sur chaque service le digest de la
+# version. Attention : un « kubectl apply -k » ulterieur remet ce tag ; le
+# relancer ensuite, ou mettre ici la version livree (par exemple 1.0.0).
 images:
   - name: ghcr.io/mxrjup/e-commerce-back/api-gateway
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/catalog-service
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/user-service
     newTag: dev
   - name: ghcr.io/mxrjup/e-commerce-back/cart-service
     newTag: dev
   - name: ghcr.io/mxrjup/e-commerce-back/order-service
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/notification-service
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/support-service
+    newTag: dev
+  - name: ghcr.io/mxrjup/e-commerce-back/mcp-service
+    newTag: dev
+  # Le back-office, publie par la CI de e-commerce-WEB-FRONT et livre par son
+  # propre deploiement par tag.
+  - name: ghcr.io/mxrjup/e-commerce-web-front
     newTag: dev
 
 # L'hote de params.env reporte dans l'Ingress.

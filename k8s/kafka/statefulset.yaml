@@ -86,14 +86,14 @@ spec:
             - name: KAFKA_LOG_DIRS
               value: "/var/lib/kafka/data/logs"
             # Retention bornee pour que le volume ne se remplisse jamais :
-            # 18 partitions (3 topics et leurs 3 DLT, x 3 partitions)
-            # x (128 Mio + un segment actif de 64 Mio) = environ 3,4 Gio au
+            # 24 partitions (4 topics et leurs 4 DLT, x 3 partitions)
+            # x (96 Mio + un segment actif de 64 Mio) = environ 3,75 Gio au
             # pire, sous les 5 Gio du volume, avec de la marge pour
             # __consumer_offsets. A recalculer a chaque topic ajoute.
             - name: KAFKA_LOG_RETENTION_HOURS
               value: "168"
             - name: KAFKA_LOG_RETENTION_BYTES
-              value: "134217728"
+              value: "100663296"
             - name: KAFKA_LOG_SEGMENT_BYTES
               value: "67108864"
             # La JVM se dimensionne sur la limite du conteneur.

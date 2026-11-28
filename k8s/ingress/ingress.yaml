@@ -1,15 +1,16 @@
 # Un seul hote public pour toute la plateforme :
 #
 #   /api/**                     -> la gateway
+#   /mcp/**, /sse               -> la gateway, transport MCP
 #   /auth/realms/ecommerce/**   -> Keycloak : connexion, jetons, cles, compte
 #   /auth/resources/**          -> Keycloak : styles et scripts des pages
+#   /** (tout le reste)         -> le back-office web, et les pages de retour
+#                                  Stripe de l'application mobile
 #
 # Ni la console d'administration (/auth/admin) ni le realm « master », celui
 # des administrateurs, ne sont publies : on y accede par « kubectl
 # port-forward », donc avec les droits du kubeconfig. Publier /auth/realms en
 # entier exposerait la connexion admin a tout internet.
-#
-# Le back-office web (T06, #11) prendra « / » quand il existera.
 #
 # L'hote est un parametre : k8s/params.env, reporte ici par kustomize. Pas de
 # ingressClassName : la classe par defaut du cluster s'applique (Traefik sur
@@ -36,6 +37,22 @@ spec:
                 name: api-gateway
                 port:
                   name: http
+          # Transport MCP (Streamable HTTP et SSE), route par la gateway vers
+          # mcp-service, qui verifie lui-meme le jeton MCP.
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
+          - path: /sse
+            pathType: Exact
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
           - path: /auth/realms/ecommerce
             pathType: Prefix
             backend:
@@ -48,5 +65,14 @@ spec:
             backend:
               service:
                 name: keycloak
+                port:
+                  name: http
+          # Le plus court prefixe : ne recoit que ce qu'aucune regle plus
+          # precise ne prend.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-backoffice
                 port:
                   name: http

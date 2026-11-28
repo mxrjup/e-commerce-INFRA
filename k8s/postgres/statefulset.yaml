@@ -68,6 +68,31 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: ORDER_DB_PASSWORD
+            - name: CATALOG_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: CATALOG_DB_PASSWORD
+            - name: USERS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: USERS_DB_PASSWORD
+            - name: NOTIFICATIONS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: NOTIFICATIONS_DB_PASSWORD
+            - name: SUPPORT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: SUPPORT_DB_PASSWORD
+            - name: MCP_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: MCP_DB_PASSWORD
             # Un sous-dossier, pas la racine du volume : un volume ext4
             # contient « lost+found », et initdb refuse un dossier non vide.
             - name: PGDATA

@@ -32,6 +32,9 @@ data:
       # O03 : publiee a la validation du paiement, consommee par le panier
       # (P06) et les notifications (N02).
       "order.paid"
+      # O04 : changement de statut d'une commande (expedition, livraison),
+      # consommee par order-service et les notifications (N05).
+      "order-status-changed"
       # C09 : baisse de prix et retour en stock, consommees par les alertes
       # (N03).
       "catalogue.evenements"
