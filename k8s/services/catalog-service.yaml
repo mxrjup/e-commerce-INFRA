@@ -1,0 +1,143 @@
+# Le catalogue : produits, variantes, photos, stock et avis. Joignable
+# seulement depuis la gateway et les autres services (voir
+# network-policies.yaml).
+#
+# Les photos des variantes sont ecrites sur le PVC catalog-images, et servies
+# par le service lui-meme sous /api/catalog/images. Pas de profil « demo » :
+# le catalogue deploye demarre vide.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  labels:
+    app: catalog-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-service
+  # Un volume ReadWriteOnce ne s'attache qu'a un pod : l'ancien s'arrete
+  # avant que le nouveau demarre.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: catalog-service
+        tier: backend
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: catalog-service
+          image: ghcr.io/mxrjup/e-commerce-back/catalog-service
+          # Tag mobile (dev) tant que kustomization.yaml le fixe ; le
+          # deploiement par tag (deploy.sh du back-end) pose un digest.
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: PUBLIC_URL
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: ecommerce_catalog
+            - name: SPRING_DATASOURCE_USERNAME
+              value: catalog_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: CATALOG_DB_PASSWORD
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: CATALOG_IMAGES_DIR
+              value: /data/images
+            # Adresse publique des photos, enregistree telle quelle en base.
+            - name: CATALOG_IMAGES_PUBLIC_URL
+              value: "$(PUBLIC_URL)/api/catalog/images"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: images
+              mountPath: /data/images
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: 400m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 48
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: images
+          persistentVolumeClaim:
+            claimName: catalog-images
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  labels:
+    app: catalog-service
+spec:
+  selector:
+    app: catalog-service
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+---
+# Les photos des variantes : elles survivent aux redemarrages et aux
+# deploiements. Classe par defaut du cluster (longhorn).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalog-images
+  labels:
+    app: catalog-service
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi

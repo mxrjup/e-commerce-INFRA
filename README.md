@@ -103,11 +103,27 @@ partie : il s'applique **avant**, voir la section précédente.
 | `ConfigMap/postgres-init` | crée ces rôles et bases au premier démarrage |
 | `Deployment/keycloak`, `Service/keycloak` | Keycloak en mode production sous `/auth`, `keycloak:8080` |
 | `ConfigMap/keycloak-realm-*` | le realm **déployé**, `k8s/keycloak/ecommerce-realm.json` |
-| `Deployment` et `Service` `api-gateway`, `cart-service`, `order-service` | images GHCR du back-end |
+| `Deployment` et `Service` des 8 services du back-end | images GHCR du back-end, voir le tableau ci-dessous |
+| `PersistentVolumeClaim/catalog-images` | les photos des variantes, 2 Gio, monté par `catalog-service` |
 | `NetworkPolicy/backend-from-gateway` | les services n'acceptent que la gateway et les autres services |
 | `NetworkPolicy/postgres-from-clients` | la base n'accepte que les services et Keycloak |
-| `Ingress/ecommerce` | l'hôte public : `/api` → gateway, `/auth/realms/ecommerce` et `/auth/resources` → Keycloak |
+| `Ingress/ecommerce` | l'hôte public : `/api`, `/mcp` et `/sse` → gateway, `/auth/realms/ecommerce` et `/auth/resources` → Keycloak |
 | `ConfigMap/platform-config-*` | `PUBLIC_HOST` et `PUBLIC_URL`, lus par les pods |
+
+| Service | Port | Base | Lit aussi |
+|---|---|---|---|
+| `api-gateway` | 8080 | — | Keycloak (jetons) |
+| `catalog-service` | 8081 | `ecommerce_catalog` | Kafka, PVC `catalog-images` |
+| `user-service` | 8082 | `ecommerce_users` | Kafka, Keycloak (jetons et Admin API), `keycloak-user-service`, `internal-read-key` |
+| `cart-service` | 8083 | `ecommerce_cart` | Kafka, `catalog-service` |
+| `order-service` | 8084 | `ecommerce_order` | Kafka, `catalog-service`, `stripe` |
+| `notification-service` | 8085 | `ecommerce_notifications` | Kafka, Keycloak, `user-service`, `keycloak-smtp`, `internal-read-key` |
+| `support-service` | 8086 | `ecommerce_support` | Kafka, Keycloak, `user-service`, `order-service`, `internal-read-key` |
+| `mcp-service` | 8087 | `ecommerce_mcp` | `catalog-service`, `order-service`, `user-service`, `internal-read-key` |
+
+Le catalogue et le serveur MCP démarrent **sans données de démonstration**
+(profils `demo` et `demo-stock` non activés) : le catalogue est à remplir par
+le back-office.
 
 ### Avant le premier déploiement
 
@@ -128,6 +144,8 @@ kubectl create secret generic postgres-credentials --from-env-file=k8s/secrets/p
 kubectl create secret generic keycloak-admin       --from-env-file=k8s/secrets/keycloak-admin.env
 kubectl create secret generic keycloak-smtp        --from-env-file=k8s/secrets/keycloak-smtp.env
 kubectl create secret generic stripe               --from-env-file=k8s/secrets/stripe.env
+kubectl create secret generic keycloak-user-service --from-env-file=k8s/secrets/keycloak-user-service.env
+kubectl create secret generic internal-read-key    --from-env-file=k8s/secrets/internal-read-key.env
 # facultatif, Google et Apple :
 kubectl create secret generic keycloak-idp         --from-env-file=k8s/secrets/keycloak-idp.env
 ```
@@ -136,8 +154,10 @@ kubectl create secret generic keycloak-idp         --from-env-file=k8s/secrets/k
 |---|---|---|
 | `postgres-credentials` | oui | PostgreSQL, Keycloak, les services |
 | `keycloak-admin` | oui | Keycloak, au premier démarrage |
-| `keycloak-smtp` | oui | Keycloak : le realm exige la vérification des emails |
+| `keycloak-smtp` | oui | Keycloak (le realm exige la vérification des emails) et `notification-service` |
 | `stripe` | oui | `order-service` |
+| `keycloak-user-service` | oui | Keycloak (secret du client `user-service`) et `user-service` |
+| `internal-read-key` | oui | `user-service`, `notification-service`, `support-service`, `mcp-service` |
 | `keycloak-idp` | non | Keycloak, fournisseurs Google et Apple |
 | `ecommerce-tls` | voir 3. | l'Ingress |
 | `ghcr-pull` | voir 4. | le kubelet, pour tirer les images |
@@ -185,13 +205,43 @@ kubectl rollout status deployment/keycloak   # une à deux minutes
 kubectl get pods
 ```
 
-Au **tout premier** déploiement, `cart-service` et `order-service` redémarrent
-une fois : ils démarrent avant que PostgreSQL accepte les connexions. C'est
-attendu.
+Au **tout premier** déploiement, les services redémarrent une fois : ils
+démarrent avant que PostgreSQL accepte les connexions. C'est attendu.
 
 Le tag des images se fixe dans la section `images` de `k8s/kustomization.yaml`
 (`dev` pour l'instant). Les images sont publiées par la CI du back-end (`D03`
 #54) sous `ghcr.io/mxrjup/e-commerce-back/<module>`.
+
+**Une version se livre ensuite par le back-end** : le tag `vX.Y.Z` sur `main`
+de `e-commerce-BACK` construit les images, puis son workflow `Deploy`
+(`.github/scripts/deploy.sh`) pose sur chaque service le digest de la version.
+Il exige que les **8** Deployments existent déjà : appliquer `k8s/` d'abord.
+Un `kubectl apply -k k8s/` ultérieur remet le tag `dev` : relancer alors le
+workflow `Deploy` sur la version en cours, ou mettre cette version dans
+`images`.
+
+### Mettre à jour un cluster déjà déployé avec 3 services
+
+Un cluster déployé avant l'ajout des 5 autres services a déjà sa base et son
+realm : ni le script de `postgres-init` ni l'import du realm ne se rejouent.
+Avant `kubectl apply -k k8s/` :
+
+1. **Le Secret `postgres-credentials`** : le recréer avec les nouvelles clés
+   (`CATALOG_DB_PASSWORD`, `USERS_DB_PASSWORD`, `NOTIFICATIONS_DB_PASSWORD`,
+   `SUPPORT_DB_PASSWORD`, `MCP_DB_PASSWORD`), en gardant les anciennes valeurs.
+2. **Les rôles et bases**, à la main, voir « PostgreSQL » ci-dessous, pour
+   `catalog_service`, `user_service`, `notification_service`,
+   `support_service` et `mcp_service`.
+3. **Les Secrets `keycloak-user-service` et `internal-read-key`**, voir plus
+   haut.
+4. **Le client `user-service`** dans la console Keycloak, realm `ecommerce` :
+   client confidentiel, *Service accounts* seul, son secret = celui de
+   `keycloak-user-service` ; puis, onglet *Service account roles*, les rôles
+   `query-users`, `view-users`, `manage-users` et `view-realm` du client
+   `realm-management`.
+5. **Le topic `order-status-changed`** : rejouer le Job des topics (section
+   « Kafka »), puis réappliquer `k8s/kafka/statefulset.yaml` pour la nouvelle
+   rétention.
 
 ### Vérifier
 
@@ -249,8 +299,13 @@ d'un autre :
 | Rôle | Base | Mot de passe (`postgres-credentials`) |
 |---|---|---|
 | `keycloak` | `keycloak` | `KEYCLOAK_DB_PASSWORD` |
+| `catalog_service` | `ecommerce_catalog` | `CATALOG_DB_PASSWORD` |
+| `user_service` | `ecommerce_users` | `USERS_DB_PASSWORD` |
 | `cart_service` | `ecommerce_cart` | `CART_DB_PASSWORD` |
 | `order_service` | `ecommerce_order` | `ORDER_DB_PASSWORD` |
+| `notification_service` | `ecommerce_notifications` | `NOTIFICATIONS_DB_PASSWORD` |
+| `support_service` | `ecommerce_support` | `SUPPORT_DB_PASSWORD` |
+| `mcp_service` | `ecommerce_mcp` | `MCP_DB_PASSWORD` |
 
 Le script de `postgres-init` ne s'exécute qu'au **premier** démarrage, sur un
 volume vide. Pour un nouveau service sur une base déjà initialisée : ajouter sa
@@ -283,28 +338,31 @@ service concerné.
 | Kafka | 250m | 1 | 1536 Mio | 1536 Mio |
 | PostgreSQL | 100m | 500m | 512 Mio | 512 Mio |
 | Keycloak | 250m | 1 | 1 Gio | 1 Gio |
-| un service Java (×3 aujourd'hui) | 50m | 500m | 384 Mio | 512 Mio |
-| **Total aujourd'hui** | **750m / 4** | **4 / 8** | **4224 Mio / 8 Gio** | **4608 Mio / 16 Gio** |
+| un service Java (×8) | 50m | 400m | 384 Mio | 512 Mio |
+| Kafka UI | 50m | 500m | 384 Mio | 512 Mio |
+| kafka-exporter | 10m | 100m | 32 Mio | 64 Mio |
+| Prometheus et Grafana (`monitoring/`) | 75m | 500m | 384 Mio | 768 Mio |
+| **Total** | **1,1 / 4** | **6,8 / 8** | **6944 Mio / 8 Gio** | **8,3 Gio / 16 Gio** |
 
 Les services consomment entre 170 et 240 Mio une fois démarrés. **La limite
-CPU est la contrainte qui tient** : avec les six services encore à venir, à
-500m chacun, le total atteint 7 cœurs sur 8, et 7,6 avec Kafka UI et
-kafka-exporter (PR #4). Une mise à jour progressive
-crée le nouveau pod avant d'arrêter l'ancien (`maxSurge: 1`) : il faut donc
-toujours garder 500m de marge sous la limite, sinon la mise à jour reste
-bloquée faute de quota.
+CPU est la contrainte qui tient** : elle a été ramenée de 500m à 400m par
+service Java pour que les huit tiennent avec la supervision (la sonde de
+démarrage leur laisse donc 4 minutes au lieu de 3). Une mise à jour
+progressive crée le nouveau pod avant d'arrêter l'ancien (`maxSurge: 1`) : il
+reste 1,2 cœur de marge, assez pour **un** service à la fois (et le Job des
+topics, 500m). Mettre à jour tous les services en même temps dépasserait le
+quota : le déploiement par tag du back-end les met donc à jour l'un après
+l'autre. `catalog-service` est en `Recreate` : son volume ne s'attache qu'à
+un pod.
 
 ### Ce qui reste à savoir
 
-- **Le budget CPU avec la supervision** : Prometheus et Grafana ajoutent
-  500m de limites (voir « Supervision »). Avec les six services à venir, Kafka
-  UI et kafka-exporter, le total passe 8 cœurs : à trancher en équipe, par
-  exemple en ramenant la limite des services Java de 500m à 400m.
 - **Les pages de retour Stripe** (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`)
   pointent vers `PUBLIC_URL/checkout/...` : à confirmer avec le parcours de
   paiement mobile (`O11` #35).
-- `cart-service` et `order-service` n'ont pas encore d'actuator : leurs sondes
-  vérifient seulement que le port répond.
+- **Les emails de `notification-service`** partent par le serveur de
+  `keycloak-smtp` en STARTTLS ; un serveur en TLS direct (port 465) demande un
+  réglage de plus côté service.
 - Un second `kubectl apply -k` affiche encore `statefulset.apps/postgres
   configured` sans rien changer : limite connue de `kubectl apply` sur les
   `volumeClaimTemplates`, Kafka a la même.
@@ -476,14 +534,13 @@ limite du conteneur) ou des **connexions en attente** au pool.
 
 Un volume de plus (2 Gio sur la classe par défaut). **Attention à la limite
 CPU** : avec les six services à venir, Kafka UI et kafka-exporter, la
-plateforme était déjà à 7,6 cœurs sur 8 ; la supervision la fait passer à
-8,1. Voir « Ce qui reste à savoir ».
+plateforme était déjà à 7,6 cœurs sur 8 ; la supervision la faisait passer à
+8,1. La limite des services Java est donc ramenée à 400m, voir « Budget du
+namespace ».
 
 ## Pas encore en place
 
 | Sujet | Issue |
 |---|---|
-| Images des services sur GHCR | `D03` #54 |
 | Back-office web sur l'Ingress (`/`) | `T06` #11 |
-| Déploiement automatique et rollback par tag | `D05` #38 |
 | Documentation de déploiement complète | `D08` #89 |

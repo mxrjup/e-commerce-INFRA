@@ -43,8 +43,8 @@ spec:
       containers:
         - name: api-gateway
           image: ghcr.io/mxrjup/e-commerce-back/api-gateway
-          # Tag mobile (dev) : sans Always, un redemarrage reprendrait l'image
-          # deja presente sur le noeud. A revoir avec un tag immuable (D05).
+          # Tag mobile (dev) tant que kustomization.yaml le fixe ; le
+          # deploiement par tag (deploy.sh du back-end) pose un digest.
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -66,10 +66,21 @@ spec:
               value: "$(PUBLIC_URL)/auth/realms/ecommerce"
             - name: KEYCLOAK_JWK_SET_URI
               value: http://keycloak:8080/auth/realms/ecommerce/protocol/openid-connect/certs
+            # Une adresse par service route (application.yml de la gateway).
+            - name: CATALOG_SERVICE_URI
+              value: http://catalog-service:8081
+            - name: USER_SERVICE_URI
+              value: http://user-service:8082
             - name: CART_SERVICE_URI
               value: http://cart-service:8083
             - name: ORDER_SERVICE_URI
               value: http://order-service:8084
+            - name: NOTIFICATION_SERVICE_URI
+              value: http://notification-service:8085
+            - name: SUPPORT_SERVICE_URI
+              value: http://support-service:8086
+            - name: MCP_SERVICE_URI
+              value: http://mcp-service:8087
             # Le back-office est servi sur le meme hote : c'est sa seule
             # origine. L'app mobile, native, n'est pas soumise au CORS.
             - name: CORS_ALLOWED_ORIGINS
@@ -82,14 +93,14 @@ spec:
               cpu: 50m
               memory: 384Mi
             limits:
-              cpu: 500m
+              cpu: 400m
               memory: 512Mi
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
               port: http
             periodSeconds: 5
-            failureThreshold: 36
+            failureThreshold: 48
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

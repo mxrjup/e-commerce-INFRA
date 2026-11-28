@@ -1,6 +1,7 @@
 # Un seul hote public pour toute la plateforme :
 #
 #   /api/**                     -> la gateway
+#   /mcp/**, /sse               -> la gateway, transport MCP
 #   /auth/realms/ecommerce/**   -> Keycloak : connexion, jetons, cles, compte
 #   /auth/resources/**          -> Keycloak : styles et scripts des pages
 #
@@ -31,6 +32,22 @@ spec:
         paths:
           - path: /api
             pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
+          # Transport MCP (Streamable HTTP et SSE), route par la gateway vers
+          # mcp-service, qui verifie lui-meme le jeton MCP.
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
+          - path: /sse
+            pathType: Exact
             backend:
               service:
                 name: api-gateway

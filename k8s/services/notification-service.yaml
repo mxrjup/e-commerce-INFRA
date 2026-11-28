@@ -1,0 +1,161 @@
+# Les notifications : emails et push Expo, a partir des evenements Kafka
+# (commande payee, statut, alertes catalogue, reponses SAV). Joignable
+# seulement depuis la gateway et les autres services.
+#
+# Les emails partent par le meme serveur SMTP que Keycloak (Secret
+# keycloak-smtp), en STARTTLS.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  labels:
+    app: notification-service
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        tier: backend
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notification-service
+          image: ghcr.io/mxrjup/e-commerce-back/notification-service
+          # Tag mobile (dev) tant que kustomization.yaml le fixe ; le
+          # deploiement par tag (deploy.sh du back-end) pose un digest.
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8085
+          env:
+            - name: PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: PUBLIC_URL
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: ecommerce_notifications
+            - name: SPRING_DATASOURCE_USERNAME
+              value: notification_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: NOTIFICATIONS_DB_PASSWORD
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            # Comme la gateway : l'issuer est l'URL publique, celle du jeton ; les
+            # cles se recuperent sur l'adresse interne de Keycloak.
+            - name: KEYCLOAK_ISSUER_URI
+              value: "$(PUBLIC_URL)/auth/realms/ecommerce"
+            - name: KEYCLOAK_JWK_SET_URI
+              value: http://keycloak:8080/auth/realms/ecommerce/protocol/openid-connect/certs
+            - name: USER_SERVICE_URI
+              value: http://user-service:8082
+            # Cle partagee des lectures internes (X-Internal-Key) entre services.
+            - name: MCP_USERS_READ_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: internal-read-key
+                  key: MCP_USERS_READ_KEY
+            - name: SPRING_MAIL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-smtp
+                  key: SMTP_HOST
+            - name: SPRING_MAIL_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-smtp
+                  key: SMTP_PORT
+            - name: SPRING_MAIL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-smtp
+                  key: SMTP_USER
+            - name: SPRING_MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-smtp
+                  key: SMTP_PASSWORD
+            - name: APP_MAIL_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-smtp
+                  key: SMTP_FROM
+            - name: SPRING_MAIL_AUTH
+              value: "true"
+            - name: SPRING_MAIL_STARTTLS
+              value: "true"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: 400m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 48
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  labels:
+    app: notification-service
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - name: http
+      port: 8085
+      targetPort: http

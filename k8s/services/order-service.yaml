@@ -1,8 +1,5 @@
 # Les commandes et le paiement Stripe. Joignable seulement depuis la gateway et
 # les autres services (voir network-policies.yaml).
-#
-# Pas d'actuator dans ce service pour l'instant : les sondes verifient que le
-# port repond.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,8 +35,8 @@ spec:
       containers:
         - name: order-service
           image: ghcr.io/mxrjup/e-commerce-back/order-service
-          # Tag mobile (dev) : sans Always, un redemarrage reprendrait l'image
-          # deja presente sur le noeud. A revoir avec un tag immuable (D05).
+          # Tag mobile (dev) tant que kustomization.yaml le fixe ; le
+          # deploiement par tag (deploy.sh du back-end) pose un digest.
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -70,8 +67,6 @@ spec:
                   key: ORDER_DB_PASSWORD
             - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
               value: kafka:9092
-            # Le service catalogue n'existe pas encore (C01, #3) : adresse
-            # reservee, port du tableau des modules du back-end.
             - name: CATALOG_SERVICE_URL
               value: http://catalog-service:8081
             - name: STRIPE_SECRET_KEY
@@ -99,19 +94,22 @@ spec:
               cpu: 50m
               memory: 384Mi
             limits:
-              cpu: 500m
+              cpu: 400m
               memory: 512Mi
           startupProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health/liveness
               port: http
             periodSeconds: 5
-            failureThreshold: 36
+            failureThreshold: 48
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health/readiness
               port: http
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health/liveness
               port: http
             periodSeconds: 20
             failureThreshold: 3
